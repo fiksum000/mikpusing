@@ -28,7 +28,7 @@ $sent = 0; $skipped = 0; $failed = 0;
 
 foreach (billingReadInvoices() as $invoice) {
     $status = strtolower((string)($invoice['status'] ?? 'unpaid'));
-    if (!in_array($status, array('unpaid', 'failed'), true)) { $skipped++; continue; }
+    if (!in_array($status, array('unpaid', 'pending', 'failed'), true)) { $skipped++; continue; }
     $dueDate = (string)($invoice['due_date'] ?? '');
     $dueTime = $dueDate !== '' ? strtotime($dueDate) : false;
     if ($dueTime === false) { $skipped++; continue; }
@@ -39,8 +39,12 @@ foreach (billingReadInvoices() as $invoice) {
     $invoiceNo = (string)($invoice['invoice_no'] ?? '');
     if ($invoiceNo === '') { $skipped++; continue; }
     $kind = ($daysUntilDue < 0) ? 'overdue' : 'reminder';
-    $stateKey = $invoiceNo . '|' . $today . '|' . $kind;
-    if (!empty($state[$stateKey])) { $skipped++; continue; }
+    $stateKey = $invoiceNo . '|' . $kind;
+    $lastSentAt = !empty($state[$stateKey]) ? strtotime((string)$state[$stateKey]) : false;
+    if ($lastSentAt !== false) {
+      if ($kind === 'reminder' && date('Y-m-d', $lastSentAt) === $today) { $skipped++; continue; }
+      if ($kind === 'overdue' && $lastSentAt > time() - 3 * 86400) { $skipped++; continue; }
+    }
 
     $data = array(
       'nama' => (string)($invoice['customer_name'] ?? $invoice['username'] ?? ''),
