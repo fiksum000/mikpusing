@@ -63,6 +63,9 @@ if (!isset($payload['total_amount']) || !is_numeric($payload['total_amount']) ||
 }
 
 if ($status === 'PAID') {
+  if (strtolower((string)($invoice['status'] ?? '')) === 'refunded') {
+    tripayCallbackRespond(409, array('success' => false, 'message' => 'This transaction was refunded; stale PAID callback ignored'));
+  }
   if (strtolower((string)($invoice['status'] ?? '')) !== 'paid') {
     $updated = billingUpdateInvoice($merchantRef, array(
       'status' => 'paid',
@@ -100,7 +103,14 @@ if ($status === 'PAID') {
   } elseif (!empty($invoice['customer_phone']) && empty($invoice['payment_notification_sent_at']) && !function_exists('fonnteSendMessage')) {
     tripayCallbackRespond(503, array('success' => false, 'message' => 'Payment saved; WhatsApp sender is unavailable'));
   }
-} elseif (in_array($status, array('FAILED', 'EXPIRED', 'CANCELED', 'CANCELLED', 'REFUND'), true) && strtolower((string)($invoice['status'] ?? '')) !== 'paid') {
+} elseif (in_array($status, array('REFUND', 'REFUNDED'), true)) {
+  // Refund is a terminal financial state, even though the invoice had previously
+  // been paid. The billing scheduler will apply normal delinquency rules again.
+  if (!billingUpdateInvoice($merchantRef, array('status' => 'refunded', 'tripay_reference' => $reference, 'payment_url' => ''))) {
+    tripayCallbackRespond(500, array('success' => false, 'message' => 'Could not persist refunded status; retry callback'));
+  }
+} elseif (in_array($status, array('FAILED', 'EXPIRED', 'CANCELED', 'CANCELLED'), true)
+    && !in_array(strtolower((string)($invoice['status'] ?? '')), array('paid', 'refunded'), true)) {
   $mappedStatus = ($status === 'EXPIRED') ? 'expired' : 'failed';
   if (!billingUpdateInvoice($merchantRef, array('status' => $mappedStatus, 'tripay_reference' => $reference, 'payment_url' => ''))) {
     tripayCallbackRespond(500, array('success' => false, 'message' => 'Could not persist transaction status; retry callback'));
