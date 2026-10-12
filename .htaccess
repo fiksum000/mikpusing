@@ -1,0 +1,14 @@
+# Mikhmon Full RADIUS security boundary.
+Options -Indexes
+RewriteEngine On
+
+# The legacy RouterOS API dashboard is not part of the Full RADIUS frontend.
+# Deny direct requests to its API-backed pages and mutations; RADIUS management
+# is served from admin.php. PHP include/require calls are not affected by these
+# HTTP rewrite rules.
+RewriteRule ^(dashboard|dhcp|hotspot|process|report|status|system|traffic|voucher)(/|$) - [F,L,NC]
+
+# Never serve runtime data, SQL files, tests, deployment scripts, or PHP libraries.
+RewriteRule ^(storage|db|tests|deploy|lib|\.git|\.github)(/|$) - [F,L,NC]
+RewriteRule ^include/config\.php$ - [F,L,NC]
+RewriteRule ^settings/tripay-callback\.php$ - [F,L,NC]
