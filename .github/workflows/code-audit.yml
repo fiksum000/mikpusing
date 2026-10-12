@@ -25,6 +25,17 @@ jobs:
           find . -type f -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l
       - name: Run pure PHP regression smoke tests
         run: php tests/smoke.php
+      - name: Check Billing integration page JavaScript
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('settings/billing-integrations.php').read_text()
+          if '<script>' not in source or '</script>' not in source:
+              raise SystemExit('Billing integrations inline script was not found')
+          js = source.split('<script>', 1)[1].split('</script>', 1)[0]
+          Path('/tmp/billing-integrations.js').write_text(js)
+          PY
+          node --check /tmp/billing-integrations.js
 
   shell-lint:
     runs-on: ubuntu-latest
