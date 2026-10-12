@@ -78,6 +78,7 @@ EOF
 chmod 0644 /etc/cron.d/mikhmon
 systemctl enable --now apache2 mariadb cron
 systemctl reload apache2
+APP_DIR="${APP_DIR}" PHP_VERSION="${PHP_VERSION}" bash "${APP_DIR}/deploy/install-isolir-portal.sh"
 php -v | head -1
 echo "Mikhmon terpasang di ${APP_DIR}. Buka http://IP-CT/ dan login dengan kredensial yang Anda tetapkan."
 # FreeRADIUS + MySQL RADIUS (opsional — untuk mode RADIUS)
