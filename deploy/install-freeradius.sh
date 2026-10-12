@@ -186,7 +186,7 @@ settings.update({
     "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 })
 tmp = path.with_suffix(".json.tmp")
-tmp.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\\n")
+tmp.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
 os.chmod(tmp, 0o640)
 tmp.replace(path)
 PY
