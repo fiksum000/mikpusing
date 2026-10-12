@@ -13,7 +13,8 @@ $settings = array_merge(array(
   'radius_server_ip' => '',
   'radius_nas_ip' => '',
   'portal_ip' => '',
-  'hotspot_profiles' => ''
+  'hotspot_profiles' => '',
+  'default_monthly_amount' => 0
 ), $settings);
 if (empty($_SESSION['billing_integrations_csrf'])) $_SESSION['billing_integrations_csrf'] = bin2hex(random_bytes(32));
 $csrf = $_SESSION['billing_integrations_csrf'];
@@ -46,6 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_integration_sett
     $radiusNasIp = trim((string)($_POST['radius_nas_ip'] ?? ''));
     $portalIp = trim((string)($_POST['portal_ip'] ?? ''));
     $hotspotProfiles = trim((string)($_POST['hotspot_profiles'] ?? ''));
+    $defaultMonthlyAmount = max(0, (int)($_POST['default_monthly_amount'] ?? 0));
     if (!in_array($backend, array('routeros','radius'), true)) {
       $message = 'Pilih backend RouterOS lokal atau FreeRADIUS.'; $messageType = 'danger';
     } elseif (!billingIntegrationValidIpv4($radiusServerIp) || !billingIntegrationValidIpv4($radiusNasIp) || !billingIntegrationValidIpv4($portalIp)) {
@@ -63,6 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_integration_sett
         'radius_nas_ip' => $radiusNasIp,
         'portal_ip' => $portalIp,
         'hotspot_profiles' => $hotspotProfiles,
+        'default_monthly_amount' => $defaultMonthlyAmount,
         'updated_at' => date('Y-m-d H:i:s')
       );
       if (billingIntegrationSaveSettings($settingsPath, $settings)) {
