@@ -25,15 +25,17 @@ if (!function_exists('mikhmonRadiusConfig')) {
     if ($loaded !== null) return $loaded;
     $base = mikhmonRadiusBaseConfig();
     $settings = mikhmonIntegrationSettings();
-    $backend = strtolower((string)($settings['ppp_auth_backend'] ?? ($base['ppp_auth_backend'] ?? 'radius')));
-    $base['ppp_auth_backend'] = in_array($backend, array('routeros', 'radius'), true) ? $backend : 'radius';
+    // This branch is explicitly Full RADIUS: legacy settings must not silently
+    // reactivate RouterOS API for PPPoE/customer/billing operations.
+    $base['ppp_auth_backend'] = 'radius';
+    $base['disconnect_mode'] = 'radius-dm';
     $loaded = $base;
     return $loaded;
   }
 }
 
 /**
- * FreeRADIUS SQL client for the optional central-authentication backend.
+ * FreeRADIUS SQL client for the Full RADIUS backend.
  * Configure MIKHMON_RADIUS_DB_HOST/USER/PASSWORD/NAME through the service
  * environment or /etc/mikhmon/radius.env; never use a default DB password.
  */
