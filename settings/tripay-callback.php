@@ -18,7 +18,10 @@ if ($status === 'PAID' && $invoice['status'] !== 'paid') {
   billingUpdateInvoice($merchantRef, array('status' => 'paid', 'tripay_reference' => isset($payload['reference']) ? $payload['reference'] : $invoice['tripay_reference'], 'paid_at' => date('Y-m-d H:i:s')));
   if (!empty($invoice['customer_phone']) && function_exists('fonnteSendMessage')) fonnteSendMessage($invoice['customer_phone'], waTemplateRender('payment', array('nama' => $invoice['customer_name'], 'invoice' => $merchantRef, 'product' => isset($invoice['product']) ? $invoice['product'] : 'Paket PPPoE', 'device' => isset($invoice['device']) ? $invoice['device'] : $invoice['username'], 'total' => 'Rp' . number_format((int)$invoice['amount'], 0, ',', '.'), 'tanggal_bayar' => date('Y-m-d H:i:s'), 'bukti_pembayaran' => !empty($invoice['proof_url']) ? $invoice['proof_url'] : (isset($payload['payment_url']) ? $payload['payment_url'] : '-'), 'referensi' => isset($payload['reference']) ? $payload['reference'] : '', 'kontak_admin' => '0859102797611', 'nama_perusahaan' => 'PT Usaha Adi Sanggoro')), array('event' => 'payment', 'invoice' => $merchantRef));
 }
-if ($status === 'FAILED' && $invoice['status'] !== 'paid') billingUpdateInvoice($merchantRef, array('status' => 'failed'));
+if (in_array($status, array('FAILED', 'EXPIRED', 'CANCELED', 'CANCELLED'), true) && ($invoice['status'] ?? '') !== 'paid') {
+  $mappedStatus = ($status === 'EXPIRED') ? 'expired' : 'failed';
+  billingUpdateInvoice($merchantRef, array('status' => $mappedStatus));
+}
 echo json_encode(array('success' => true, 'message' => 'Callback processed', 'invoice' => $merchantRef, 'status' => $status));
 exit;
 ?>
