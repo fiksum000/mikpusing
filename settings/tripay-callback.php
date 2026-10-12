@@ -9,7 +9,7 @@ $configuration = tripayConfig();
 $raw = file_get_contents('php://input');
 $payload = json_decode($raw ?: '{}', true);
 $signature = isset($_SERVER['HTTP_X_CALLBACK_SIGNATURE']) ? (string)$_SERVER['HTTP_X_CALLBACK_SIGNATURE'] : '';
-$expected = hash_hmac('sha256', (string)$raw, (string)$configuration['private_key'];
+$expected = hash_hmac('sha256', (string)$raw, (string)$configuration['private_key']);
 
 function tripayCallbackRespond($code, $body) {
   http_response_code($code);
