@@ -1,0 +1,12 @@
+# Runtime credentials / local configuration
+/config.php
+/include/config.php
+/storage/*.json
+/storage/*.log
+/storage/backups/
+
+# Local archives and editor files
+*.tar.gz
+*.zip
+.DS_Store
+Thumbs.db
