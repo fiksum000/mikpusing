@@ -33,18 +33,13 @@ Installer memasang Apache, PHP 8.2, MariaDB, cron, halaman isolir HTTP pada port
 
 ## FreeRADIUS, billing otomatis, dan isolir
 
-Untuk autentikasi terpusat PPPoE + Hotspot, accounting, group paket, FUP, halaman isolir, serta pemulihan otomatis setelah pembayaran, ikuti panduan khusus:
+Untuk mode **Full RADIUS tanpa RouterOS API pada scheduler billing**—autentikasi PPPoE + Hotspot, accounting, group paket, FUP, halaman isolir, dan pemulihan setelah pembayaran melalui RADIUS Disconnect-Message di RouterOS v7—ikuti panduan khusus:
 
 [**Panduan MikroTik RADIUS + halaman isolir**](deploy/README-RADIUS.md)
 
-Alur isolir menggunakan group RADIUS `ISOLIR` dengan address-list `MIKPUSING-ISOLIR`. Setelah memasukkan router di Mikhmon, dry-run dahulu konfigurasi redirect, kemudian terapkan dengan IP CT yang benar:
+Alur isolir menggunakan group RADIUS `ISOLIR` dengan address-list `MIKPUSING-ISOLIR`. Pada mode Full RADIUS, konfigurasi RADIUS incoming dan rule firewall portal dilakukan sekali dari Terminal RouterOS; perintah `deploy/configure-isolir-routeros.php` adalah alternatif yang membutuhkan API, jadi tidak perlu dipakai untuk mode tanpa API.
 
-```bash
-php deploy/configure-isolir-routeros.php --portal-ip IP_LAN_CT
-php deploy/configure-isolir-routeros.php --portal-ip IP_LAN_CT --apply
-```
-
-Profil diperiksa setiap 5 menit. Pemulihan setelah pembayaran terkonfirmasi ditargetkan jauh di bawah 20 menit selama callback diterima, FreeRADIUS aktif, serta RouterOS API dapat dijangkau. Redirect halaman berlaku untuk HTTP; HTTPS tidak dapat dialihkan transparan ke halaman HTTP tanpa error TLS. Untuk pelanggan PPPoE dan Hotspot, tambahkan seluruh group normal/FUP dalam menu `Profile PPPoE & FUP`.
+Scheduler memeriksa status setiap 5 menit dan mengirim Disconnect-Message ke port RouterOS UDP 1700. Pemulihan setelah pembayaran terkonfirmasi ditargetkan sekitar satu siklus scheduler (hingga 5 menit) plus waktu reconnect jika callback diterima, FreeRADIUS/accounting aktif, dan RouterOS mengirim ACK DM. Redirect halaman isolir berlaku untuk HTTP; HTTPS tidak dapat dialihkan transparan ke halaman HTTP tanpa error TLS. Untuk pelanggan PPPoE dan Hotspot, tambahkan semua group normal/FUP/ISOLIR di menu `Profile PPPoE & FUP`.
 
 Di panel Mikhmon, buka **Billing & TriPay → Integrasi Billing / MikroTik / RADIUS** untuk memilih backend, menyimpan IP LAN, dan menyalin perintah setup. Halaman itu menghasilkan perintah untuk CT Proxmox, konfigurasi RADIUS di RouterOS, serta dry-run dan apply rule portal isolir. Shared secret RADIUS sengaja tidak disimpan di web; ambil dari file privat `/root/mikpusing-radius-credentials.txt` pada CT, masukkan ke kolom secret, lalu salin perintah yang dihasilkan. Jalankan dry-run dulu dan uji satu router sebelum menerapkan produksi.
 
