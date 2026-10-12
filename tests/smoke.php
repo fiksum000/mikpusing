@@ -43,6 +43,58 @@ try {
 }
 assertMikpusing($invalidPeriodRejected, 'invalid invoice month is rejected');
 
+/* Use isolated temporary storage so invoice tests never touch production invoices. */
+$originalBillingFileEnv = getenv('MIKHMON_BILLING_FILE');
+$invoiceTestDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'mikpusing-smoke-' . getmypid() . '-' . bin2hex(random_bytes(4));
+assertMikpusing(@mkdir($invoiceTestDir, 0700, true), 'temporary invoice test directory is created');
+$invoiceTestPath = $invoiceTestDir . DIRECTORY_SEPARATOR . 'invoices.json';
+putenv('MIKHMON_BILLING_FILE=' . $invoiceTestPath);
+try {
+    $testCustomer = array(array(
+        'username' => 'radius-test-user',
+        'router_session' => 'RADIUS',
+        'name' => 'RADIUS Test User',
+        'amount' => 25000,
+        'due_day' => 31,
+        'profile' => 'PPPOE-TEST',
+        'phone' => '628000000000'
+    ));
+    $firstCreated = billingCreateForCustomers($testCustomer, '2026-10', 0);
+    $secondCreated = billingCreateForCustomers($testCustomer, '2026-10', 0);
+    assertMikpusing($firstCreated === 1, 'first invoice generation creates one invoice');
+    assertMikpusing($secondCreated === 0, 'repeat invoice generation is idempotent');
+    $testInvoiceNo = billingInvoiceNo('radius-test-user', '2026-10', 'RADIUS');
+    $testInvoice = billingFindInvoice($testInvoiceNo);
+    assertMikpusing(is_array($testInvoice) && (int)$testInvoice['amount'] === 25000, 'created invoice stores subscriber amount');
+    assertMikpusing($testInvoice['due_date'] === '2026-10-31', 'invoice due day is valid for month length');
+    assertMikpusing(billingUpdateInvoice($testInvoiceNo, array(
+        'status' => 'paid',
+        'tripay_reference' => 'TRIPAY-TEST-REFERENCE',
+        'payment_notification_sent_at' => 'payment-sent'
+    )), 'invoice update is persisted');
+    assertMikpusing(billingUpdateInvoice($testInvoiceNo, array(
+        'invoice_notification_sent_at' => 'invoice-sent'
+    )), 'independent invoice-notification marker is persisted');
+    $updatedInvoice = billingFindInvoice($testInvoiceNo);
+    assertMikpusing(($updatedInvoice['status'] ?? '') === 'paid', 'invoice status survives subsequent partial update');
+    assertMikpusing(($updatedInvoice['tripay_reference'] ?? '') === 'TRIPAY-TEST-REFERENCE', 'TriPay reference survives subsequent partial update');
+    assertMikpusing(($updatedInvoice['payment_notification_sent_at'] ?? '') === 'payment-sent', 'payment-receipt marker is preserved');
+    assertMikpusing(($updatedInvoice['invoice_notification_sent_at'] ?? '') === 'invoice-sent', 'invoice-message marker is independent');
+    file_put_contents($invoiceTestPath, '{', LOCK_EX);
+    $corruptInvoiceRejected = false;
+    try {
+        billingUpdateInvoice($testInvoiceNo, array('status' => 'unpaid'));
+    } catch (RuntimeException $e) {
+        $corruptInvoiceRejected = true;
+    }
+    assertMikpusing($corruptInvoiceRejected, 'corrupt invoice JSON aborts update safely');
+    assertMikpusing(file_get_contents($invoiceTestPath) === '{', 'corrupt invoice JSON is not silently overwritten');
+} finally {
+    putenv($originalBillingFileEnv === false ? 'MIKHMON_BILLING_FILE' : 'MIKHMON_BILLING_FILE=' . $originalBillingFileEnv);
+    foreach (glob($invoiceTestPath . '*') ?: array() as $testFile) @unlink($testFile);
+    @rmdir($invoiceTestDir);
+}
+
 $bytes = pppoeReadQueueCounters(array(
     array('name' => 'customer-1', 'bytes' => '100/200', 'target' => '10.10.10.2/32'),
     array('name' => 'another', 'bytes' => '500/500', 'target' => '10.10.10.3/32'),
