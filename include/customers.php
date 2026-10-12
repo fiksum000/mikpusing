@@ -71,11 +71,14 @@ if (!function_exists('customerPath')) {
       $key = (string)$routerSession . '|' . $username;
       $comment = (string)($secret['comment'] ?? '');
       $profile = (string)($secret['profile'] ?? '');
+      $commentDueDay = null;
+      if (preg_match('/BILLING\\s*=\\s*(\\d{1,2})/i', $comment, $dueMatch)) $commentDueDay = min(31, max(1, (int)$dueMatch[1]));
       $status = (($secret['disabled'] ?? '') === 'true') ? 'disabled' : 'active';
       if (isset($index[$key])) {
         $i = $index[$key];
         $rows[$i]['router_session'] = (string)$routerSession;
         $rows[$i]['mikrotik_comment'] = $comment;
+        if ($commentDueDay !== null) $rows[$i]['due_day'] = $commentDueDay;
         if ($profile !== '' && strtoupper($profile) !== 'ISOLIR') {
           $rows[$i]['profile'] = $profile;
           $rows[$i]['normal_profile'] = $profile;
@@ -87,7 +90,7 @@ if (!function_exists('customerPath')) {
         $rows[] = array(
           'username' => $username,
           'name' => $comment !== '' ? $comment : $username,
-          'phone' => '', 'email' => '', 'amount' => 0, 'due_day' => 20,
+          'phone' => '', 'email' => '', 'amount' => 0, 'due_day' => $commentDueDay === null ? 20 : $commentDueDay,
           'router_session' => (string)$routerSession,
           'profile' => $profile, 'normal_profile' => $profile,
           'status' => $status, 'mikrotik_comment' => $comment, 'last_sync' => $now
