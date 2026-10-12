@@ -42,7 +42,7 @@ if (!function_exists('billingPath')) {
   function billingCreateForCustomers($customers, $period, $defaultAmount = 0) {
     if (!billingValidPeriod($period)) throw new InvalidArgumentException('Periode invoice harus berformat YYYY-MM.');
     $invoices = billingReadInvoices(); $created = 0; $existing = array();
-    foreach ($invoices as $invoice) if (!empty($invoice['invoice_no'])) $existing[$invoice['invoice_no']] = true;
+    foreach ($invoices as $invoice) if (!empty($invoice['invoice_no'])) $existing[$invoice['invoice_no']] = $invoice;
     $monthStart = DateTimeImmutable::createFromFormat('!Y-m-d', $period . '-01');
     $daysInMonth = (int)$monthStart->format('t');
     foreach ($customers as $customer) {
@@ -52,7 +52,11 @@ if (!function_exists('billingPath')) {
       if ($username === '') continue;
       $invoiceNo = billingInvoiceNo($username, $period, $routerSession);
       $legacyInvoiceNo = billingLegacyInvoiceNo($username, $period);
-      if (isset($existing[$invoiceNo]) || ($legacyInvoiceNo !== '' && isset($existing[$legacyInvoiceNo]))) continue;
+      if (isset($existing[$invoiceNo])) continue;
+      if ($legacyInvoiceNo !== '' && isset($existing[$legacyInvoiceNo])) {
+        $legacySession = (string)($existing[$legacyInvoiceNo]['router_session'] ?? '');
+        if ($legacySession === $routerSession) continue;
+      }
       $amount = isset($customer['amount']) && (int)$customer['amount'] > 0 ? (int)$customer['amount'] : (int)$defaultAmount;
       $dueDay = min($daysInMonth, max(1, (int)($customer['due_day'] ?? 20)));
       $dueDate = $monthStart->setDate((int)$monthStart->format('Y'), (int)$monthStart->format('m'), $dueDay)->format('Y-m-d');
@@ -76,7 +80,7 @@ if (!function_exists('billingPath')) {
         ));
         fonnteSendMessage($newInvoice['customer_phone'], $message, array('event' => 'invoice', 'invoice' => $invoiceNo));
       }
-      $existing[$invoiceNo] = true; $created++;
+      $existing[$invoiceNo] = $newInvoice; $created++;
     }
     if (!billingWriteInvoices($invoices)) throw new RuntimeException('Gagal menulis storage/invoices.json.');
     return $created;
