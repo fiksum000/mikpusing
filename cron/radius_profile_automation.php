@@ -82,6 +82,11 @@ try {
         $quota = max(0.0, (float)($package['quota_gb'] ?? 0));
         $invoiceNo = billingInvoiceNo($username, $period, 'RADIUS');
         $invoice = billingFindInvoice($invoiceNo);
+        if (!is_array($invoice)) {
+            // Continue recognizing existing invoices created before hashed invoice IDs.
+            $legacyInvoiceNo = billingLegacyInvoiceNo($username, $period);
+            if ($legacyInvoiceNo !== '') $invoice = billingFindInvoice($legacyInvoiceNo);
+        }
         // Missing invoice is not interpreted as unpaid: prevent mass isolation if billing was not generated.
         if (!is_array($invoice)) {
             $skipped++;
