@@ -5,7 +5,7 @@ include_once('./include/pppoe_packages.php');
 include_once('./lib/free_radius_client.php');
 $config = pppoePackageRead(); $message = ''; $messageType = 'success';
 $integrationConfig = mikhmonRadiusConfig();
-$isRadiusMode = (($integrationConfig['ppp_auth_backend'] ?? 'routeros') === 'radius');
+$isRadiusMode = (($integrationConfig['ppp_auth_backend'] ?? 'radius') === 'radius');
 $displayIsolirProfile = $isRadiusMode ? 'ISOLIR' : (string)($config['isolir_profile'] ?? 'ISOLIR');
 if (isset($_POST['save_packages'])) {
   $isolir = trim((string)($_POST['isolir_profile'] ?? 'ISOLIR'));
