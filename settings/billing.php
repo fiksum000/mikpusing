@@ -22,29 +22,24 @@ $customerTypeLabel = $isRadiusMode ? 'pelanggan RADIUS PPPoE/Hotspot' : 'pelangg
 $usernameColumnLabel = $isRadiusMode ? 'Username PPPoE / Hotspot' : 'Username PPPoE';
 $generateButtonLabel = $isRadiusMode ? 'Generate Invoice PPPoE / Hotspot' : 'Generate Invoice PPPoE';
 
-if ($isRadiusMode) {
+// Billing customer source is always FreeRADIUS SQL. Never query /ppp/secret via API.
+$isRadiusMode = true;
+$customerTypeLabel = 'pelanggan RADIUS PPPoE/Hotspot';
+$usernameColumnLabel = 'Username PPPoE / Hotspot';
+$generateButtonLabel = 'Generate Invoice PPPoE / Hotspot';
+try {
   $radius = new RadiusClient();
-  try {
-    foreach ($radius->listUsers() as $radiusUser) {
-      $secrets[] = array('name' => (string)$radiusUser['username'], 'profile' => (string)$radiusUser['profile'], 'comment' => '');
-    }
-  } catch (Throwable $e) {
-    $billingMessage = 'Gagal membaca user RADIUS: ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8');
-    $billingType = 'danger';
-  } finally {
-    if (isset($radius) && $radius instanceof RadiusClient) $radius->disconnect();
+  foreach ($radius->listUsers() as $radiusUser) {
+    $secrets[] = array('name' => (string)$radiusUser['username'], 'profile' => (string)$radiusUser['profile'], 'comment' => '');
   }
-  $billingSession = 'RADIUS';
-  $billingIdentity = 'FreeRADIUS';
-} else {
-  $API = new RouterosAPI();
-  $API->debug = false;
-  if (!empty($billingSession) && @$API->connect($iphost, $userhost, decrypt($passwdhost))) {
-    $response = $API->comm('/ppp/secret/print');
-    if (is_array($response) && !isset($response['!trap'])) $secrets = $response;
-    $API->disconnect();
-  }
+} catch (Throwable $e) {
+  $billingMessage = 'Gagal membaca user RADIUS: ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8');
+  $billingType = 'danger';
+} finally {
+  if (isset($radius) && $radius instanceof RadiusClient) $radius->disconnect();
 }
+$billingSession = 'RADIUS';
+$billingIdentity = 'FreeRADIUS';
 $allCustomers = customerSyncSecrets($secrets, $billingSession);
 $customers = array();
 foreach (customerReadAll() as $customer) {
