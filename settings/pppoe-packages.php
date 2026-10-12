@@ -2,16 +2,21 @@
 error_reporting(0);
 if (!isset($_SESSION['mikhmon'])) { header('Location:../admin.php?id=login'); exit; }
 include_once('./include/pppoe_packages.php');
+include_once('./lib/free_radius_client.php');
 $config = pppoePackageRead(); $message = ''; $messageType = 'success';
+$integrationConfig = mikhmonRadiusConfig();
+$isRadiusMode = (($integrationConfig['ppp_auth_backend'] ?? 'routeros') === 'radius');
+$displayIsolirProfile = $isRadiusMode ? 'ISOLIR' : (string)($config['isolir_profile'] ?? 'ISOLIR');
 if (isset($_POST['save_packages'])) {
   $isolir = trim((string)($_POST['isolir_profile'] ?? 'ISOLIR'));
+  if ($isRadiusMode) $isolir = 'ISOLIR';
   $names = $_POST['package_name'] ?? array();
   $normalProfiles = $_POST['normal_profile'] ?? array();
   $fupProfiles = $_POST['fup_profile'] ?? array();
   $quotas = $_POST['quota_gb'] ?? array();
   $packages = array(); $seen = array();
-  if ($isolir === '') {
-    $message = 'Nama group isolir tidak boleh kosong.'; $messageType = 'danger';
+  if (!preg_match('/^[A-Za-z0-9_.@-]{1,64}$/', $isolir)) {
+    $message = 'Nama profile isolir hanya boleh memakai huruf, angka, titik, garis bawah, @, atau minus (maks. 64 karakter).'; $messageType = 'danger';
   } else {
     foreach ($names as $i => $name) {
       $displayName = trim((string)$name);
@@ -21,6 +26,7 @@ if (isset($_POST['save_packages'])) {
       if ($displayName === '' && $normal === '' && $fup === '') continue;
       if ($displayName === '') $displayName = $normal;
       if ($normal === '') { $message = 'Setiap paket harus punya group normal.'; $messageType = 'danger'; break; }
+      if (!preg_match('/^[A-Za-z0-9_.@-]{1,64}$/', $normal) || ($fup !== '' && !preg_match('/^[A-Za-z0-9_.@-]{1,64}$/', $fup))) { $message = 'Nama group normal/FUP hanya boleh berisi huruf, angka, titik, garis bawah, @, atau minus (maks. 64 karakter).'; $messageType = 'danger'; break; }
       if ($normal === $isolir || $fup === $isolir) { $message = 'Group ISOLIR tidak boleh dipakai sebagai group normal/FUP.'; $messageType = 'danger'; break; }
       if (isset($seen[$normal])) { $message = 'Group normal tidak boleh duplikat: ' . htmlspecialchars($normal, ENT_QUOTES, 'UTF-8'); $messageType = 'danger'; break; }
       $seen[$normal] = true;
@@ -49,8 +55,8 @@ if (empty($config['packages'])) {
     <form method="post" action="./admin.php?id=pppoe-packages">
       <div class="row mb-3"><div class="col-md-5">
         <label>Nama group RADIUS untuk pelanggan isolir</label>
-        <input class="form-control" name="isolir_profile" value="<?= htmlspecialchars((string)($config['isolir_profile'] ?? 'ISOLIR'), ENT_QUOTES, 'UTF-8'); ?>" required/>
-        <small class="text-muted">Gunakan <code>ISOLIR</code> jika memakai SQL contoh. Group ini diberi alamat-list MIKHPUSING-ISOLIR untuk portal HTTP.</small>
+        <input class="form-control" name="isolir_profile" value="<?= htmlspecialchars($displayIsolirProfile, ENT_QUOTES, 'UTF-8'); ?>" <?= $isRadiusMode ? 'readonly' : ''; ?> required/>
+        <small class="text-muted"><?php if ($isRadiusMode) { ?>Mode RADIUS mengunci group isolir menjadi <code>ISOLIR</code> agar cocok dengan policy FreeRADIUS/MariaDB dan address-list <code>MIKPUSING-ISOLIR</code>.<?php } else { ?>Nama profile isolir pada MikroTik lokal. Profile ini menggunakan address-list <code>MIKPUSING-ISOLIR</code> untuk portal HTTP.<?php } ?></small>
       </div></div>
       <div class="table-responsive"><table class="table table-sm table-striped">
         <thead><tr><th>Nama paket</th><th>Group normal</th><th>Group FUP (opsional)</th><th>Kuota FUP (GiB)</th><th></th></tr></thead>
