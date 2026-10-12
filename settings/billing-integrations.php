@@ -2,7 +2,12 @@
 error_reporting(0);
 if (!isset($_SESSION['mikhmon'])) { header('Location:../admin.php?id=login'); exit; }
 require_once('./lib/free_radius_client.php');
+require_once('./include/pppoe_packages.php');
 require_once('./include/tripay.php');
+$packageSettings = pppoePackageRead();
+$localIsolirProfile = trim((string)($packageSettings['isolir_profile'] ?? 'ISOLIR'));
+if (!preg_match('/^[A-Za-z0-9_.@-]{1,64}$/', $localIsolirProfile)) $localIsolirProfile = 'ISOLIR';
+$localIsolirProfileJs = json_encode($localIsolirProfile, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP);
 
 $settingsPath = __DIR__ . '/../storage/integration_settings.json';
 $settings = mikhmonIntegrationSettings();
@@ -229,6 +234,7 @@ tail -n 80 /var/www/mikhmon/storage/radius-accounting.log</pre>
     return String(el('hotspotProfiles').value||'').split(',').map(function(s){return s.trim();}).filter(Boolean).filter(function(s){return /^[A-Za-z0-9_.@ -]{1,64}$/.test(s);});
   }
   function setText(id, text){el(id).textContent=text;}
+  var localIsolirName = <?= is_string($localIsolirProfileJs) ? $localIsolirProfileJs : '"ISOLIR"'; ?>;
   function render(){
     var server=el('radiusServerIp').value.trim(), nas=el('radiusNasIp').value.trim(), portal=el('portalIp').value.trim();
     var secret=el('radiusSharedSecret').value.trim(), hs=profiles();
@@ -241,7 +247,7 @@ tail -n 80 /var/www/mikhmon/storage/radius-accounting.log</pre>
     if(validIpv4(portal)){
       setText('isolirDryCode','cd /var/www/mikhmon && php deploy/configure-isolir-routeros.php --portal-ip '+portal);
       setText('isolirApplyCode','cd /var/www/mikhmon && php deploy/configure-isolir-routeros.php --portal-ip '+portal+' --apply');
-      setText('routerLocalCode',':if ([:len [/ppp profile find where name="ISOLIR"]] = 0) do={ /ppp profile add name="ISOLIR" rate-limit=64k/64k address-list=MIKPUSING-ISOLIR } else={ /ppp profile set [find where name="ISOLIR"] rate-limit=64k/64k address-list=MIKPUSING-ISOLIR }\n# Setelah rule diverifikasi, pasang redirect HTTP di CT dengan perintah apply isolir di atas.');
+      setText('routerLocalCode',':if ([:len [/ppp profile find where name="'+localIsolirName+'"]] = 0) do={ /ppp profile add name="'+localIsolirName+'" rate-limit=64k/64k address-list=MIKPUSING-ISOLIR } else={ /ppp profile set [find where name="'+localIsolirName+'"] rate-limit=64k/64k address-list=MIKPUSING-ISOLIR }\n# Setelah rule diverifikasi, pasang redirect HTTP di CT dengan perintah apply isolir di atas.');
     } else {
       setText('isolirDryCode','# Isi IP LAN CT untuk halaman isolir.');
       setText('isolirApplyCode','# Isi IP LAN CT untuk halaman isolir.');
