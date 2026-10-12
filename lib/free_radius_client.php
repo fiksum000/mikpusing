@@ -76,6 +76,73 @@ class RadiusClient {
     return $rows;
   }
 
+  /** Return the MikroTik group reply attributes used by the Full RADIUS package editor. */
+  public function getGroupAttributes() {
+    $sql = "SELECT groupname, attribute, value FROM radgroupreply
+            WHERE attribute IN ('Mikrotik-Rate-Limit', 'Mikrotik-Address-List')
+            ORDER BY groupname, attribute";
+    $result = $this->db->query($sql);
+    $groups = array();
+    while ($row = $result->fetch_assoc()) {
+      $group = (string)$row['groupname'];
+      $attribute = (string)$row['attribute'];
+      // If an old database has duplicate group/attribute rows, use the last row
+      // returned by ID ordering in future-safe form rather than returning arrays.
+      $groups[$group][$attribute] = (string)$row['value'];
+    }
+    $result->free();
+    return $groups;
+  }
+
+  /**
+   * Upsert only the managed MikroTik reply attributes in one SQL transaction.
+   * Existing unrelated reply attributes for the same group are preserved.
+   */
+  public function upsertGroupsAttributes(array $groups) {
+    $allowedAttributes = array('Mikrotik-Rate-Limit', 'Mikrotik-Address-List');
+    $prepared = array();
+    foreach ($groups as $groupname => $attributes) {
+      $groupname = trim((string)$groupname);
+      if (!preg_match('/^[A-Za-z0-9_.@-]{1,64}$/', $groupname)) {
+        throw new InvalidArgumentException('Nama group RADIUS tidak valid: ' . $groupname);
+      }
+      if (!is_array($attributes) || !$attributes) {
+        throw new InvalidArgumentException('Atribut group RADIUS tidak boleh kosong: ' . $groupname);
+      }
+      foreach ($attributes as $attribute => $value) {
+        $attribute = (string)$attribute;
+        $value = trim((string)$value);
+        if (!in_array($attribute, $allowedAttributes, true) || $value === '' || strlen($value) > 255
+            || preg_match('/[\x00-\x1F\x7F]/', $value)) {
+          throw new InvalidArgumentException('Atribut RADIUS tidak valid untuk group ' . $groupname);
+        }
+        $prepared[$groupname][$attribute] = $value;
+      }
+    }
+    if (!$prepared) throw new InvalidArgumentException('Tidak ada group RADIUS untuk disimpan.');
+    $this->db->begin_transaction();
+    try {
+      $delete = $this->db->prepare('DELETE FROM radgroupreply WHERE groupname = ? AND attribute = ?');
+      $insert = $this->db->prepare('INSERT INTO radgroupreply (groupname, attribute, op, value) VALUES (?, ?, ?, ?)');
+      $operator = ':=';
+      foreach ($prepared as $groupname => $attributes) {
+        foreach ($attributes as $attribute => $value) {
+          $delete->bind_param('ss', $groupname, $attribute);
+          $delete->execute();
+          $insert->bind_param('ssss', $groupname, $attribute, $operator, $value);
+          $insert->execute();
+        }
+      }
+      $delete->close();
+      $insert->close();
+      $this->db->commit();
+    } catch (Throwable $e) {
+      $this->db->rollback();
+      throw $e;
+    }
+    return count($prepared);
+  }
+
   /** Return group names which have RADIUS reply attributes configured. */
   public function listGroups() {
     $result = $this->db->query("SELECT DISTINCT groupname FROM radgroupreply WHERE groupname <> '' ORDER BY groupname");
