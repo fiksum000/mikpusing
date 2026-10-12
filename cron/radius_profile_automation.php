@@ -49,6 +49,22 @@ $routerSessionController = new MikhmonRouterSessionController(isset($data) && is
 try {
     $radius = new RadiusClient();
     $users = $radius->listUsers();
+    // Persist each RADIUS subscriber's last known normal group before any isolation
+    // transition; this is how the system can restore the right package after payment.
+    $customerSyncRows = array();
+    foreach ($users as $radiusUser) {
+        $customerSyncRows[] = array(
+            'name' => (string)($radiusUser['username'] ?? ''),
+            'profile' => (string)($radiusUser['profile'] ?? ''),
+            'comment' => ''
+        );
+    }
+    customerSyncSecrets($customerSyncRows, 'RADIUS');
+    $customers = array();
+    foreach (customerReadAll() as $row) {
+        $usernameKey = (string)($row['username'] ?? '');
+        if ($usernameKey !== '') $customers[(string)($row['router_session'] ?? '') . '|' . $usernameKey] = $row;
+    }
     $usageMap = $radius->getMonthlyUsageMap($period);
     foreach ($users as $user) {
         $username = trim((string)($user['username'] ?? ''));
