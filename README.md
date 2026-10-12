@@ -37,7 +37,7 @@ Untuk mode **Full RADIUS tanpa RouterOS API pada scheduler billing**—autentika
 
 [**Panduan MikroTik RADIUS + halaman isolir**](deploy/README-RADIUS.md)
 
-Alur isolir menggunakan group RADIUS `ISOLIR` dengan address-list `MIKPUSING-ISOLIR`. Pada mode Full RADIUS, konfigurasi RADIUS incoming dan rule firewall portal dilakukan sekali dari Terminal RouterOS; perintah `deploy/configure-isolir-routeros.php` adalah alternatif yang membutuhkan API, jadi tidak perlu dipakai untuk mode tanpa API.
+Alur isolir menggunakan group RADIUS `ISOLIR` dengan address-list `MIKPUSING-ISOLIR`. Dalam mode Full RADIUS, konfigurasi RADIUS incoming dan rule firewall portal dilakukan sekali dari halaman **Add Router — RADIUS NAS** lalu ditempel langsung ke Terminal RouterOS v7. Billing dan scheduler tidak memakai RouterOS API.
 
 Scheduler memeriksa status setiap 5 menit dan mengirim Disconnect-Message ke port RouterOS UDP 1700. Pemulihan setelah pembayaran terkonfirmasi ditargetkan sekitar satu siklus scheduler (hingga 5 menit) plus waktu reconnect jika callback diterima, FreeRADIUS/accounting aktif, dan RouterOS mengirim ACK DM. Redirect halaman isolir berlaku untuk HTTP; HTTPS tidak dapat dialihkan transparan ke halaman HTTP tanpa error TLS. Untuk pelanggan PPPoE dan Hotspot, tambahkan semua group normal/FUP/ISOLIR di menu `Profile PPPoE & FUP`.
 
