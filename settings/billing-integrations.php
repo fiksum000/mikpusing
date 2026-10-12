@@ -210,7 +210,7 @@ tail -n 80 /var/www/mikhmon/storage/pppoe-automation.log
 tail -n 80 /var/www/mikhmon/storage/invoice-generation.log
 tail -n 80 /var/www/mikhmon/storage/radius-accounting.log</pre>
     <button type="button" class="group-item group-item-md" onclick="copyIntegrationCode('integrationStatusCode')">Salin perintah pemeriksaan</button>
-    <div class="alert bg-warning mt-3"><strong>Catatan mode:</strong> RouterOS lokal di menu ini mengotomatisasi PPPoE lokal. Agar PPPoE dan Hotspot memakai autentikasi, accounting, group isolir/FUP, serta pemulihan yang sama dari satu database, pilih FreeRADIUS + MariaDB. Pada RADIUS, nama user harus unik antara PPPoE dan Hotspot jika keduanya ditagih terpisah.</div>
+    <div class="alert bg-warning mt-3"><strong>Full RADIUS:</strong> billing tidak memakai RouterOS API. User, group normal/FUP/ISOLIR, dan accounting harus siap sebelum mengalihkan pelanggan. Username harus unik jika PPPoE dan Hotspot ditagih terpisah di satu database.</div>
   </div></div>
 </div></div>
 
