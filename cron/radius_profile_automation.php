@@ -71,6 +71,13 @@ try {
         if ($usernameKey !== '') $customers[(string)($row['router_session'] ?? '') . '|' . $usernameKey] = $row;
     }
     $usageMap = $radius->getMonthlyUsageMap($period);
+    // Index all invoice periods once. Billing/isolation decisions must account for
+    // old unpaid invoices too, not only the invoice for the current month.
+    $invoicesByUsername = array();
+    foreach (billingReadInvoices() as $invoiceRow) {
+        $invoiceUsername = trim((string)($invoiceRow['username'] ?? ''));
+        if ($invoiceUsername !== '') $invoicesByUsername[$invoiceUsername][] = $invoiceRow;
+    }
     foreach ($users as $user) {
         $username = trim((string)($user['username'] ?? ''));
         $profile = trim((string)($user['profile'] ?? ''));
@@ -85,31 +92,38 @@ try {
         $normal = trim((string)($package['normal_profile'] ?? ''));
         $fup = trim((string)($package['fup_profile'] ?? ''));
         $quota = max(0.0, (float)($package['quota_gb'] ?? 0));
-        $invoiceNo = billingInvoiceNo($username, $period, 'RADIUS');
-        $invoice = billingFindInvoice($invoiceNo);
-        if (!is_array($invoice)) {
-            // Continue recognizing existing invoices created before hashed invoice IDs.
-            $legacyInvoiceNo = billingLegacyInvoiceNo($username, $period);
-            if ($legacyInvoiceNo !== '') $invoice = billingFindInvoice($legacyInvoiceNo);
-        }
-        // Missing invoice is not interpreted as unpaid: prevent mass isolation if billing was not generated.
-        if (!is_array($invoice)) {
+        $subscriberInvoices = $invoicesByUsername[$username] ?? array();
+        // No billing history means no automated isolation. Preserve the current
+        // group rather than treating a missing invoice as an unpaid invoice.
+        if (!$subscriberInvoices) {
             $skipped++;
-            $log("WARN backend=radius user={$username} invoice_missing; profile unchanged");
+            $log("WARN backend=radius user={$username} invoice_history_missing; profile unchanged");
             continue;
         }
-        $paid = ($invoice['status'] ?? '') === 'paid';
-        $dueTimestamp = !empty($invoice['due_date']) ? strtotime((string)$invoice['due_date'] . ' 00:00:00') : false;
-        $isolateTimestamp = $dueTimestamp === false ? false : strtotime('+5 days', $dueTimestamp);
-        $pastGrace = $isolateTimestamp !== false && time() >= $isolateTimestamp;
-        if ($isolateTimestamp === false) $log("WARN backend=radius user={$username} invoice_due_date_invalid; isolation disabled for safety");
+        $pastGrace = billingCustomerHasPastDueInvoice($subscriberInvoices);
+        if (!$pastGrace) {
+            foreach ($subscriberInvoices as $subscriberInvoice) {
+                if (strtolower((string)($subscriberInvoice['status'] ?? 'unpaid')) === 'paid'
+                    || (int)($subscriberInvoice['amount'] ?? 0) <= 0) continue;
+                $dueDate = trim((string)($subscriberInvoice['due_date'] ?? ''));
+                $dueTimestamp = $dueDate !== '' ? strtotime($dueDate . ' 00:00:00') : false;
+                if ($dueTimestamp === false || date('Y-m-d', $dueTimestamp) !== $dueDate) {
+                    $log("WARN backend=radius user={$username} invoice_due_date_invalid; that invoice will not trigger isolation");
+                }
+            }
+        }
         $usageBytes = array_key_exists($username, $usageMap) ? (float)$usageMap[$username] : null;
         $usageGb = $usageBytes === null ? null : $usageBytes / 1073741824;
         $target = $profile;
-        if ($paid && $normal !== '') $target = $normal;
-        elseif (!$paid && $pastGrace && $isolir !== '') $target = $isolir;
-        elseif (!$paid && $fup !== '' && $quota > 0 && $usageGb !== null && $usageGb >= $quota) $target = $fup;
-        elseif (!$paid && $fup !== '' && $profile === $fup && $normal !== '' && ($quota <= 0 || ($usageGb !== null && $usageGb < $quota))) $target = $normal;
+        if ($pastGrace && $isolir !== '') {
+            $target = $isolir;
+        } elseif ($fup !== '' && $quota > 0 && $usageGb !== null && $usageGb >= $quota) {
+            $target = $fup;
+        } elseif ($normal !== '' && ($profile === $isolir || ($profile === $fup && ($quota <= 0 || ($usageGb !== null && $usageGb < $quota))))) {
+            // Restore normal service if no invoice remains past grace, even when
+            // this month's invoice exists but has not reached its own due date.
+            $target = $normal;
+        }
         if ($quota > 0 && $usageGb === null) $log("WARN backend=radius user={$username} monthly_usage_unknown; run radius-accounting-snapshot.php every 5 minutes");
         if ($target === '' || $target === $profile) continue;
         $message = ($apply ? 'APPLY' : 'DRY-RUN') . " backend=radius user={$username} {$profile} -> {$target} usage_gb=" . ($usageGb === null ? 'unknown' : number_format($usageGb, 3, '.', ''));
