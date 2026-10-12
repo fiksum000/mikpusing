@@ -17,6 +17,7 @@ require_once __DIR__ . '/../include/billing.php';
 require_once __DIR__ . '/../include/pppoe_packages.php';
 require_once __DIR__ . '/../include/pppoe_usage.php';
 require_once __DIR__ . '/../lib/free_radius_client.php';
+require_once __DIR__ . '/../lib/routeros_session_control.php';
 
 // Central FreeRADIUS users are managed in SQL groups, not local /ppp/secret.
 $radiusConfig = mikhmonRadiusConfig();
@@ -160,7 +161,9 @@ foreach ($data as $sessionName => $sessionData) {
             if (is_array($result) && isset($result['!trap'])) {
                 $errors++; mikhmonLogAutomation("ERROR " . $message . " router_trap");
             } else {
-                $changed++; mikhmonLogAutomation($message);
+                $kick = mikhmonKickSubscriberOnApi($api, $username);
+                $changed++;
+                mikhmonLogAutomation($message . " kicked_ppp={$kick['ppp']} kicked_hotspot={$kick['hotspot']} kick_errors={$kick['errors']}");
             }
         }
     } catch (Throwable $e) {
