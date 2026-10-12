@@ -91,10 +91,10 @@ try {
             $kicked = $routerSessionController->disconnectSubscriber($username);
             $changed++;
             $log($message . ' sessions_kicked_ppp=' . $kicked['ppp'] . ' sessions_kicked_hotspot=' . $kicked['hotspot'] . ' routers_checked=' . $kicked['routers_checked'] . ' kick_errors=' . $kicked['errors']);
-            if ($kicked['routers_checked'] > 0 && $kicked['errors'] === 0) {
+            if ($kicked['routers_checked'] > 0 && $kicked['errors'] === 0 && count($kicked['router_errors']) === 0) {
                 unset($pending[$username]);
             } else {
-                $log("WARN backend=radius user={$username} session_kick_pending; the next five-minute run will retry until a router API responds");
+                $log("WARN backend=radius user={$username} session_kick_pending; next five-minute runs retry until every configured router API responds");
             }
         } catch (Throwable $e) {
             $errors++; $log("ERROR " . $message . " reason=" . preg_replace('/\s+/', ' ', $e->getMessage()));
@@ -104,11 +104,11 @@ try {
     if ($apply && count($pending) > 0) {
         foreach (array_keys($pending) as $pendingUser) {
             $kicked = $routerSessionController->disconnectSubscriber((string)$pendingUser);
-            if ($kicked['routers_checked'] > 0 && $kicked['errors'] === 0) {
+            if ($kicked['routers_checked'] > 0 && $kicked['errors'] === 0 && count($kicked['router_errors']) === 0) {
                 unset($pending[$pendingUser]);
                 $log("RECOVERED backend=radius user={$pendingUser} pending_session_kick_completed ppp={$kicked['ppp']} hotspot={$kicked['hotspot']}");
             } else {
-                $log("WARN backend=radius user={$pendingUser} session_kick_still_pending routers_checked={$kicked['routers_checked']} errors={$kicked['errors']}");
+                $log("WARN backend=radius user={$pendingUser} session_kick_still_pending routers_checked={$kicked['routers_checked']} errors={$kicked['errors']} offline_routers=" . count($kicked['router_errors']));
             }
         }
         $pendingJson = json_encode($pending, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
