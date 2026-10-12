@@ -34,7 +34,7 @@ if ($merchantRef === '' || $reference === '' || $status === '') {
   tripayCallbackRespond(400, array('success' => false, 'message' => 'Missing transaction fields'));
 }
 // Share the same per-invoice lock as checkout creation and WhatsApp delivery.
-$callbackLock = billingAcquireInvoiceLock($merchantRef);
+$callbackLock = billingAcquireInvoiceLock($merchantRef, true);
 if (!$callbackLock) {
   tripayCallbackRespond(503, array('success' => false, 'message' => 'Another operation for this invoice is processing; retry callback'));
 }
