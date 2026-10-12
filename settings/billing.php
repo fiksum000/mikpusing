@@ -67,13 +67,19 @@ if (isset($_POST['create_tripay'])) {
     } else {
       $result = tripayCreateTransaction($invoice);
       if (!empty($result['success'])) {
-        $reference = isset($result['data']['reference']) ? (string)$result['data']['reference'] : '';
-        $checkout = isset($result['data']['checkout_url']) ? (string)$result['data']['checkout_url'] : '';
-        billingUpdateInvoice($invoice['invoice_no'], array(
+        $reference = isset($result['data']['reference']) ? trim((string)$result['data']['reference']) : '';
+        $checkout = isset($result['data']['checkout_url']) ? trim((string)$result['data']['checkout_url']) : '';
+        if ($reference === '' || $checkout === '') {
+          $billingMessage = 'TriPay merespons tanpa reference transaksi atau checkout URL. Invoice tidak ditandai pending; periksa dashboard TriPay.';
+          $billingType = 'danger';
+        } elseif (!billingUpdateInvoice($invoice['invoice_no'], array(
           'payment_method' => $invoice['payment_method'], 'tripay_reference' => $reference,
           'payment_url' => $checkout, 'status' => 'pending', 'payment_notification_sent_at' => ''
-        ));
-        if ($checkout !== '' && !empty($invoice['customer_phone']) && function_exists('fonnteSendMessage')) {
+        ))) {
+          $billingMessage = 'Transaksi TriPay dibuat, tetapi data referensi gagal disimpan. Jangan buat transaksi baru; periksa dashboard TriPay dan invoice ini.';
+          $billingType = 'danger';
+        } else {
+        if (!empty($invoice['customer_phone']) && function_exists('fonnteSendMessage')) {
           $message = waTemplateRender('invoice', array(
             'nama' => (string)($invoice['customer_name'] ?? $invoice['username'] ?? ''),
             'invoice' => (string)$invoice['invoice_no'],
@@ -85,8 +91,9 @@ if (isset($_POST['create_tripay'])) {
           $sendResult = fonnteSendMessage($invoice['customer_phone'], $message, array('event' => 'invoice', 'invoice' => $invoice['invoice_no']));
           if (!empty($sendResult['status'])) billingUpdateInvoice($invoice['invoice_no'], array('payment_notification_sent_at' => date('Y-m-d H:i:s')));
         }
-        $billingMessage = 'Transaksi TriPay berhasil dibuat.' . ($reference !== '' ? ' Reference: ' . htmlspecialchars($reference, ENT_QUOTES, 'UTF-8') : '');
+        $billingMessage = 'Transaksi TriPay berhasil dibuat. Reference: ' . htmlspecialchars($reference, ENT_QUOTES, 'UTF-8');
         $billingType = 'success';
+        }
       } else { $billingMessage = 'Gagal membuat transaksi TriPay: ' . htmlspecialchars((string)($result['message'] ?? 'Unknown error'), ENT_QUOTES, 'UTF-8'); $billingType = 'danger'; }
     }
   }
