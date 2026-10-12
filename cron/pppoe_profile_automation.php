@@ -32,11 +32,11 @@ require_once __DIR__ . '/../lib/free_radius_client.php';
 
 // Central FreeRADIUS users are managed in SQL groups, not local /ppp/secret.
 $radiusConfig = mikhmonRadiusConfig();
-$authBackend = strtolower((string)(getenv('MIKHMON_PPP_AUTH_BACKEND') ?: ($radiusConfig['ppp_auth_backend'] ?? 'radius')));
-if ($authBackend === 'radius') {
-    require __DIR__ . '/radius_profile_automation.php';
-    exit;
-}
+// Force the central RADIUS path. Environment variables and stale JSON config
+// must not reactivate the legacy RouterOS API automation.
+$authBackend = 'radius';
+require __DIR__ . '/radius_profile_automation.php';
+exit;
 
 // Legacy RouterOS API code is loaded only when explicitly selected.
 require_once __DIR__ . '/../lib/routeros_api.class.php';
