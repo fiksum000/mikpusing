@@ -27,6 +27,12 @@ $url = $_SERVER['REQUEST_URI'];
 // load session MikroTik
 $session = $_GET['session'];
 $id = $_GET['id'];
+
+// Legacy RouterOS-control screens are intentionally disabled in Full RADIUS mode.
+if (in_array((string)$id, array('reboot', 'shutdown', 'remove-session', 'editor'), true)) {
+  header('Location: ./admin.php?id=sessions', true, 302);
+  exit;
+}
 $c = $_GET['c'];
 $router = $_GET['router'];
 $logo = $_GET['logo'];
@@ -61,7 +67,7 @@ if ($_SESSION['theme'] == "") {
 // load config
 if ($id == "tripay-callback") {
   include_once('./include/config.php');
-  include_once('./lib/routeros_api.class.php');
+  include_once('./lib/decrypt_helper.php');
   include_once('./settings/tripay-callback.php');
   exit;
 }
@@ -69,7 +75,7 @@ include_once('./include/headhtml.php');
 include('./include/config.php');
 include('./include/readcfg.php');
 
-include_once('./lib/routeros_api.class.php');
+include_once('./lib/decrypt_helper.php');
 include_once('./lib/formatbytesbites.php');
 include_once('./include/fonnte_log.php');
 ?>
