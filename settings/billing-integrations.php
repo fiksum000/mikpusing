@@ -108,7 +108,7 @@ $radiusSecretFromPost = ''; // Never persist shared secrets in the web configura
     <div class="card-header"><h3 class="card-title"><i class="fa fa-plug"></i> Billing & Integrasi MikroTik / RADIUS</h3></div>
     <div class="card-body">
       <?php if ($message !== '') { ?><div class="bg-<?= $messageType; ?> pd-10 mb-3"><?= htmlspecialchars($message, ENT_QUOTES, 'UTF-8'); ?></div><?php } ?>
-      <p class="text-muted">Pilih backend yang dipakai scheduler Billing. IP di bawah disimpan lokal; password database dan shared secret RADIUS tidak disimpan di pengaturan web. Dalam mode Full RADIUS, scheduler tidak memerlukan RouterOS API; perintah RouterOS disalin lalu dijalankan langsung di terminal router.</p>
+      <p class="text-muted">Mode billing ditetapkan ke Full RADIUS. Atur IP server/NAS, harga invoice, URL callback, dan metode pembayaran di halaman ini. Pengaturan router dilakukan melalui **Add Router — RADIUS NAS**; username/password RouterOS API tidak diperlukan untuk billing.</p>
       <p><a href="./admin.php?id=pppoe-packages" class="group-item group-item-md">Mapping paket PPPoE / Hotspot / FUP / Isolir</a></p>
       <small class="text-muted">Jalur billing Full RADIUS tidak menggunakan RouterOS API. Add Router — RADIUS NAS digunakan untuk menyiapkan MikroTik sebagai client FreeRADIUS; secret tidak disimpan di source code atau pengaturan web.</small>
       <div class="mb-3">
