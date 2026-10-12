@@ -41,7 +41,7 @@ Alur isolir menggunakan group RADIUS `ISOLIR` dengan address-list `MIKPUSING-ISO
 
 Scheduler memeriksa status setiap 5 menit dan mengirim Disconnect-Message ke port RouterOS UDP 1700. Pemulihan setelah pembayaran terkonfirmasi ditargetkan sekitar satu siklus scheduler (hingga 5 menit) plus waktu reconnect jika callback diterima, FreeRADIUS/accounting aktif, dan RouterOS mengirim ACK DM. Redirect halaman isolir berlaku untuk HTTP; HTTPS tidak dapat dialihkan transparan ke halaman HTTP tanpa error TLS. Untuk pelanggan PPPoE dan Hotspot, tambahkan semua group normal/FUP/ISOLIR di menu `Profile PPPoE & FUP`.
 
-Di panel Mikhmon, buka **Billing & TriPay → Integrasi Billing / MikroTik / RADIUS** untuk memilih backend, menyimpan IP LAN, dan menyalin perintah setup. Halaman itu menghasilkan perintah untuk CT Proxmox, konfigurasi RADIUS di RouterOS, serta dry-run dan apply rule portal isolir. Shared secret RADIUS sengaja tidak disimpan di web; ambil dari file privat `/root/mikpusing-radius-credentials.txt` pada CT, masukkan ke kolom secret, lalu salin perintah yang dihasilkan. Jalankan dry-run dulu dan uji satu router sebelum menerapkan produksi.
+Untuk menambahkan router tanpa RouterOS API, buka **Admin Settings → Add Router — RADIUS NAS**. Isi IP LAN CT, IP sumber NAS MikroTik, dan IP portal isolir. Jalankan perintah CT yang dihasilkan (instal FreeRADIUS untuk NAS pertama, atau daftar ulang NAS jika RADIUS sudah dipasang), lalu salin perintah RADIUS yang dihasilkan ke Terminal MikroTik v7. Shared secret tidak disimpan di web; baca dari file privat `/root/mikpusing-radius-credentials.txt` di Console CT. Uji satu akun PPPoE dan satu akun Hotspot dulu sebelum memindahkan pelanggan.
 
 ## Keamanan
 
