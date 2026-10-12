@@ -27,8 +27,12 @@ if (!function_exists("decrypt")) require_once __DIR__ . '/../lib/decrypt_helper.
     $config = tripayConfig();
     $merchantRef = $invoice['invoice_no']; $amount = (int)$invoice['amount'];
     $signature = hash_hmac('sha256', $config['merchant_code'] . $merchantRef . $amount, $config['private_key']);
+    if (empty($_SERVER['HTTP_HOST'])) return array('success' => false, 'message' => 'HTTP_HOST tidak tersedia; periksa virtual host.');
     $base = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'];
-    return tripayRequest('/transaction/create', array('method' => $invoice['payment_method'], 'merchant_ref' => $merchantRef, 'amount' => $amount, 'customer_name' => $invoice['customer_name'], 'customer_email' => $invoice['customer_email'] ?: 'billing@example.com', 'customer_phone' => $invoice['customer_phone'], 'order_items[0][name]' => 'Tagihan Internet ' . $invoice['invoice_no'], 'order_items[0][price]' => $amount, 'order_items[0][quantity]' => 1, 'callback_url' => $base . '/admin.php?id=tripay-callback', 'return_url' => $base . '/admin.php?id=billing&paid=1', 'expired_time' => time() + (24 * 60 * 60), 'signature' => $signature));
+    $returnUrl = $base . '/admin.php?id=billing&paid=1';
+    $routerSession = trim((string)($invoice['router_session'] ?? ''));
+    if ($routerSession !== '' && strtoupper($routerSession) !== 'RADIUS') $returnUrl .= '&session=' . rawurlencode($routerSession);
+    return tripayRequest('/transaction/create', array('method' => $invoice['payment_method'], 'merchant_ref' => $merchantRef, 'amount' => $amount, 'customer_name' => $invoice['customer_name'], 'customer_email' => $invoice['customer_email'] ?: 'billing@example.com', 'customer_phone' => $invoice['customer_phone'], 'order_items[0][name]' => 'Tagihan Internet ' . $invoice['invoice_no'], 'order_items[0][price]' => $amount, 'order_items[0][quantity]' => 1, 'callback_url' => $base . '/admin.php?id=tripay-callback', 'return_url' => $returnUrl, 'expired_time' => time() + (24 * 60 * 60), 'signature' => $signature));
   }
 }
 ?>
