@@ -63,8 +63,6 @@ try {
         $normal = trim((string)($package['normal_profile'] ?? ''));
         $fup = trim((string)($package['fup_profile'] ?? ''));
         $quota = max(0.0, (float)($package['quota_gb'] ?? 0));
-        $dueDay = min($daysInMonth, max(1, (int)($customer['due_day'] ?? 20)));
-        $isolateDay = min($daysInMonth, $dueDay + 5);
         $invoiceNo = billingInvoiceNo($username, $period, 'RADIUS');
         $invoice = billingFindInvoice($invoiceNo);
         // Missing invoice is not interpreted as unpaid: prevent mass isolation if billing was not generated.
@@ -74,13 +72,17 @@ try {
             continue;
         }
         $paid = ($invoice['status'] ?? '') === 'paid';
+        $dueTimestamp = !empty($invoice['due_date']) ? strtotime((string)$invoice['due_date'] . ' 00:00:00') : false;
+        $isolateTimestamp = $dueTimestamp === false ? false : strtotime('+5 days', $dueTimestamp);
+        $pastGrace = $isolateTimestamp !== false && time() >= $isolateTimestamp;
+        if ($isolateTimestamp === false) $log("WARN backend=radius user={$username} invoice_due_date_invalid; isolation disabled for safety");
         $usageBytes = array_key_exists($username, $usageMap) ? (float)$usageMap[$username] : null;
         $usageGb = $usageBytes === null ? null : $usageBytes / 1073741824;
         $target = $profile;
         if ($paid && $normal !== '') $target = $normal;
-        elseif (!$paid && $today >= $isolateDay && $isolir !== '') $target = $isolir;
+        elseif (!$paid && $pastGrace && $isolir !== '') $target = $isolir;
         elseif (!$paid && $fup !== '' && $quota > 0 && $usageGb !== null && $usageGb >= $quota) $target = $fup;
-        elseif (($profile === $isolir || ($fup !== '' && $profile === $fup)) && $normal !== '') $target = $normal;
+        elseif (!$paid && $fup !== '' && $profile === $fup && $normal !== '' && ($quota <= 0 || ($usageGb !== null && $usageGb < $quota))) $target = $normal;
         if ($quota > 0 && $usageGb === null) $log("WARN backend=radius user={$username} monthly_usage_unknown; run radius-accounting-snapshot.php every 5 minutes");
         if ($target === '' || $target === $profile) continue;
         $message = ($apply ? 'APPLY' : 'DRY-RUN') . " backend=radius user={$username} {$profile} -> {$target} usage_gb=" . ($usageGb === null ? 'unknown' : number_format($usageGb, 3, '.', ''));
