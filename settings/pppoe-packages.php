@@ -48,13 +48,13 @@ if (empty($config['packages'])) {
 }
 ?>
 <div class="row"><div class="col-12"><div class="card">
-  <div class="card-header"><h3 class="card-title"><i class="fa fa-sliders"></i> Kebijakan RADIUS PPPoE / Hotspot, FUP & Isolir</h3></div>
+  <div class="card-header"><h3 class="card-title"><i class="fa fa-sliders"></i> <?= $isRadiusMode ? 'Kebijakan RADIUS PPPoE / Hotspot, FUP & Isolir' : 'Kebijakan MikroTik PPPoE, FUP & Isolir'; ?></h3></div>
   <div class="card-body">
     <p class="text-muted">Tambahkan satu baris untuk setiap group layanan, baik PPPoE maupun Hotspot. Nama group harus sama persis dengan <code>radusergroup.groupname</code> dan dibuat di <code>radgroupreply</code>. Semua group normal/FUP yang terdaftar dapat dipulihkan otomatis setelah tagihan terkonfirmasi lunas.</p>
     <?php if ($message !== '') { ?><div class="bg-<?= $messageType; ?> pd-10 mb-3"><?= $message; ?></div><?php } ?>
     <form method="post" action="./admin.php?id=pppoe-packages">
       <div class="row mb-3"><div class="col-md-5">
-        <label>Nama group RADIUS untuk pelanggan isolir</label>
+        <label><?= $isRadiusMode ? 'Nama group RADIUS isolir' : 'Nama profile isolir MikroTik'; ?></label>
         <input class="form-control" name="isolir_profile" value="<?= htmlspecialchars($displayIsolirProfile, ENT_QUOTES, 'UTF-8'); ?>" <?= $isRadiusMode ? 'readonly' : ''; ?> required/>
         <small class="text-muted"><?php if ($isRadiusMode) { ?>Mode RADIUS mengunci group isolir menjadi <code>ISOLIR</code> agar cocok dengan policy FreeRADIUS/MariaDB dan address-list <code>MIKPUSING-ISOLIR</code>.<?php } else { ?>Nama profile isolir pada MikroTik lokal. Profile ini menggunakan address-list <code>MIKPUSING-ISOLIR</code> untuk portal HTTP.<?php } ?></small>
       </div></div>
