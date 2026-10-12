@@ -3,25 +3,75 @@ include_once('./include/billing.php');
 include_once('./include/tripay.php');
 include_once('./include/fonnte_log.php');
 include_once('./include/wa_templates.php');
-$config = tripayConfig();
+
+header('Content-Type: application/json; charset=utf-8');
+$configuration = tripayConfig();
 $raw = file_get_contents('php://input');
 $payload = json_decode($raw ?: '{}', true);
-$signature = isset($_SERVER['HTTP_X_CALLBACK_SIGNATURE']) ? $_SERVER['HTTP_X_CALLBACK_SIGNATURE'] : (isset($_POST['signature']) ? $_POST['signature'] : '');
-$expected = hash_hmac('sha256', $raw, $config['private_key']);
-header('Content-Type: application/json; charset=utf-8');
-if ($config['private_key'] === '' || $signature === '' || !hash_equals($expected, $signature)) { http_response_code(403); echo json_encode(array('success' => false, 'message' => 'Invalid callback signature')); exit; }
-$merchantRef = isset($payload['merchant_ref']) ? trim($payload['merchant_ref']) : '';
-$status = strtoupper(isset($payload['status']) ? $payload['status'] : '');
+$signature = isset($_SERVER['HTTP_X_CALLBACK_SIGNATURE']) ? (string)$_SERVER['HTTP_X_CALLBACK_SIGNATURE'] : '';
+$expected = hash_hmac('sha256', (string)$raw, (string)$configuration['private_key'];
+
+function tripayCallbackRespond($code, $body) {
+  http_response_code($code);
+  echo json_encode($body, JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+if (!is_array($payload) || json_last_error() !== JSON_ERROR_NONE) {
+  tripayCallbackRespond(400, array('success' => false, 'message' => 'Invalid JSON payload'));
+}
+if ($configuration['private_key'] === '' || $signature === '' || !hash_equals($expected, $signature)) {
+  tripayCallbackRespond(403, array('success' => false, 'message' => 'Invalid callback signature'));
+}
+$event = (string)($_SERVER['HTTP_X_CALLBACK_EVENT'] ?? '');
+if ($event !== '' && $event !== 'payment_status') {
+  tripayCallbackRespond(400, array('success' => false, 'message' => 'Unsupported callback event'));
+}
+$merchantRef = trim((string)($payload['merchant_ref'] ?? ''));
+$status = strtoupper(trim((string)($payload['status'] ?? '')));
+$reference = trim((string)($payload['reference'] ?? ''));
+if ($merchantRef === '' || $reference === '' || $status === '') {
+  tripayCallbackRespond(400, array('success' => false, 'message' => 'Missing transaction fields'));
+}
 $invoice = billingFindInvoice($merchantRef);
-if (!$invoice) { http_response_code(404); echo json_encode(array('success' => false, 'message' => 'Invoice not found')); exit; }
-if ($status === 'PAID' && $invoice['status'] !== 'paid') {
-  billingUpdateInvoice($merchantRef, array('status' => 'paid', 'tripay_reference' => isset($payload['reference']) ? $payload['reference'] : $invoice['tripay_reference'], 'paid_at' => date('Y-m-d H:i:s')));
-  if (!empty($invoice['customer_phone']) && function_exists('fonnteSendMessage')) fonnteSendMessage($invoice['customer_phone'], waTemplateRender('payment', array('nama' => $invoice['customer_name'], 'invoice' => $merchantRef, 'product' => isset($invoice['product']) ? $invoice['product'] : 'Paket PPPoE', 'device' => isset($invoice['device']) ? $invoice['device'] : $invoice['username'], 'total' => 'Rp' . number_format((int)$invoice['amount'], 0, ',', '.'), 'tanggal_bayar' => date('Y-m-d H:i:s'), 'bukti_pembayaran' => !empty($invoice['proof_url']) ? $invoice['proof_url'] : (isset($payload['payment_url']) ? $payload['payment_url'] : '-'), 'referensi' => isset($payload['reference']) ? $payload['reference'] : '', 'kontak_admin' => '0859102797611', 'nama_perusahaan' => 'PT Usaha Adi Sanggoro')), array('event' => 'payment', 'invoice' => $merchantRef));
+if (!$invoice) {
+  tripayCallbackRespond(404, array('success' => false, 'message' => 'Invoice not found'));
 }
-if (in_array($status, array('FAILED', 'EXPIRED', 'CANCELED', 'CANCELLED'), true) && ($invoice['status'] ?? '') !== 'paid') {
+$expectedReference = trim((string)($invoice['tripay_reference'] ?? ''));
+if ($expectedReference !== '' && !hash_equals($expectedReference, $reference)) {
+  tripayCallbackRespond(403, array('success' => false, 'message' => 'Transaction reference does not match this invoice'));
+}
+if (!isset($payload['total_amount']) || !is_numeric($payload['total_amount']) || (int)$payload['total_amount'] !== (int)($invoice['amount'] ?? -1)) {
+  tripayCallbackRespond(400, array('success' => false, 'message' => 'Transaction amount does not match invoice'));
+}
+
+if ($status === 'PAID' && strtolower((string)($invoice['status'] ?? '')) !== 'paid') {
+  $updated = billingUpdateInvoice($merchantRef, array(
+    'status' => 'paid',
+    'tripay_reference' => $reference,
+    'paid_at' => !empty($payload['paid_at']) && is_numeric($payload['paid_at']) ? date('Y-m-d H:i:s', (int)$payload['paid_at']) : date('Y-m-d H:i:s')
+  ));
+  if (!$updated) tripayCallbackRespond(500, array('success' => false, 'message' => 'Could not persist paid status; retry callback'));
+  if (!empty($invoice['customer_phone']) && function_exists('fonnteSendMessage')) {
+    $messageData = array(
+      'nama' => (string)($invoice['customer_name'] ?? $invoice['username'] ?? ''),
+      'invoice' => $merchantRef,
+      'product' => (string)($invoice['product'] ?? 'Paket Internet'),
+      'device' => (string)($invoice['device'] ?? $invoice['username'] ?? ''),
+      'total' => 'Rp' . number_format((int)$invoice['amount'], 0, ',', '.'),
+      'tanggal_bayar' => date('Y-m-d H:i:s'),
+      'bukti_pembayaran' => !empty($invoice['proof_url']) ? $invoice['proof_url'] : $reference,
+      'referensi' => $reference,
+      'kontak_admin' => (string)(getenv('MIKHMON_SUPPORT_PHONE') ?: ''),
+      'nama_perusahaan' => (string)(getenv('MIKHMON_COMPANY_NAME') ?: 'Administrator Internet')
+    );
+    fonnteSendMessage((string)$invoice['customer_phone'], waTemplateRender('payment', $messageData), array('event' => 'payment', 'invoice' => $merchantRef));
+  }
+} elseif (in_array($status, array('FAILED', 'EXPIRED', 'CANCELED', 'CANCELLED', 'REFUND'), true) && strtolower((string)($invoice['status'] ?? '')) !== 'paid') {
   $mappedStatus = ($status === 'EXPIRED') ? 'expired' : 'failed';
-  billingUpdateInvoice($merchantRef, array('status' => $mappedStatus));
+  if (!billingUpdateInvoice($merchantRef, array('status' => $mappedStatus, 'tripay_reference' => $reference))) {
+    tripayCallbackRespond(500, array('success' => false, 'message' => 'Could not persist transaction status; retry callback'));
+  }
 }
-echo json_encode(array('success' => true, 'message' => 'Callback processed', 'invoice' => $merchantRef, 'status' => $status));
-exit;
+tripayCallbackRespond(200, array('success' => true, 'message' => 'Callback processed', 'invoice' => $merchantRef, 'status' => $status));
 ?>
