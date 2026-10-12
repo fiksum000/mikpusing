@@ -9,6 +9,6 @@ RewriteEngine On
 RewriteRule ^(dashboard|dhcp|hotspot|process|report|status|system|traffic|voucher)(/|$) - [F,L,NC]
 
 # Never serve runtime data, SQL files, tests, deployment scripts, or PHP libraries.
-RewriteRule ^(storage|db|tests|deploy|lib|\.git|\.github)(/|$) - [F,L,NC]
-RewriteRule ^include/config\.php$ - [F,L,NC]
+RewriteRule ^(storage|db|tests|deploy|lib|cron|\.git|\.github)(/|$) - [F,L,NC]
+RewriteRule ^(include|settings)/.*\.php$ - [F,L,NC]
 RewriteRule ^settings/tripay-callback\.php$ - [F,L,NC]

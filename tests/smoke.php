@@ -7,6 +7,7 @@ require_once __DIR__ . '/../include/pppoe_packages.php';
 require_once __DIR__ . '/../include/customers.php';
 require_once __DIR__ . '/../lib/free_radius_client.php';
 require_once __DIR__ . '/../lib/decrypt_helper.php';
+require_once __DIR__ . '/../include/radius_navigation.php';
 
 function assertMikpusing($condition, $message) {
     if (!$condition) {
@@ -26,6 +27,8 @@ assertMikpusing(billingDueDate('2024-02', 31) === '2024-02-29', 'leap-year due d
 assertMikpusing(billingDueDate('2026-04', 31) === '2026-04-30', '30-day month due date clamps to the last day');
 assertMikpusing(billingDueDate('2026-10', 20) === '2026-10-20', 'ordinary due date is unchanged');
 
+assertMikpusing(array_keys(radiusNavigation('sessions')) === array('sessions', 'radius-nas'), 'outside navigation contains only Admin Settings and Add Router');
+assertMikpusing(isset(radiusNavigation('radius-dashboard')['billing'], radiusNavigation('radius-dashboard')['radius-users'], radiusNavigation('radius-dashboard')['tripay-settings']), 'operational modules are inside dashboard');
 $radiusConfigForTest = mikhmonRadiusConfig();
 assertMikpusing(($radiusConfigForTest['ppp_auth_backend'] ?? '') === 'radius', 'Full RADIUS backend is enforced even if legacy settings exist');
 assertMikpusing(($radiusConfigForTest['disconnect_mode'] ?? '') === 'radius-dm', 'RADIUS Disconnect-Message is enforced as session disconnect mode');

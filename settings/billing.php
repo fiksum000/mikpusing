@@ -80,7 +80,7 @@ if ($billingPostValid && isset($_POST['create_tripay'])) {
         $billingMessage = 'Invoice ini sudah memiliki transaksi TriPay aktif. Gunakan link checkout yang tercantum pada daftar invoice; transaksi duplikat tidak dibuat.';
         $billingType = 'warning';
       } elseif (strtolower((string)($invoice['status'] ?? '')) === 'pending'
-          && !empty($invoice['tripay_reference']) && empty($invoice['payment_url'])) {
+          && empty($invoice['payment_url'])) {
         $billingMessage = 'Invoice berstatus pending tetapi URL checkout kosong. Periksa dashboard TriPay; transaksi baru tidak dibuat otomatis.';
         $billingType = 'danger';
       } else {
@@ -90,6 +90,7 @@ if ($billingPostValid && isset($_POST['create_tripay'])) {
           $billingMessage = 'Pilih metode pembayaran TriPay yang valid.'; $billingType = 'danger';
         } else {
           $invoice['payment_method'] = $method;
+          if (!billingUpdateInvoice($invoiceNo, array('status' => 'pending', 'payment_method' => $method, 'tripay_reference' => '', 'payment_url' => ''))) throw new RuntimeException('Tidak dapat menyimpan status checkout.');
           $result = tripayCreateTransaction($invoice);
           if (empty($result['success'])) {
             $billingMessage = 'Gagal membuat transaksi TriPay: ' . htmlspecialchars((string)($result['message'] ?? 'Unknown error'), ENT_QUOTES, 'UTF-8');

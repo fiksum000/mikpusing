@@ -8,17 +8,21 @@ require_once('./lib/free_radius_client.php');
 
 $radiusUiConfig = mikhmonRadiusBaseConfig();
 $radiusUiSettings = mikhmonIntegrationSettings();
-$radiusUiNasIp = trim((string)($radiusUiSettings['radius_nas_ip'] ?? ($radiusUiConfig['radius_nas_ip'] ?? '')));
+$radiusUiNasIp = trim((string)($radiusUiConfig['radius_nas_ip'] ?? ''));
 $radiusUiServerIp = trim((string)($radiusUiSettings['radius_server_ip'] ?? '192.168.200.179'));
 $radiusUiConfigured = is_file(getenv('MIKHMON_RADIUS_CONFIG') ?: '/etc/mikhmon/radius.php') && !empty($radiusUiConfig['db_password']);
 $adminSettingMessage = '';
+if (empty($_SESSION['admin_csrf'])) $_SESSION['admin_csrf'] = bin2hex(random_bytes(32));
 $adminSettingType = 'info';
 
 if (isset($_POST['save'])) {
   $newUser = trim((string)($_POST['useradm'] ?? ''));
   $newPassword = (string)($_POST['passadm'] ?? '');
   $newQr = strtolower(trim((string)($_POST['qrbt'] ?? 'disable')));
-  if (!preg_match('/^[A-Za-z0-9_.@-]{1,64}$/', $newUser)) {
+  if (!hash_equals($_SESSION['admin_csrf'], (string)($_POST['csrf'] ?? ''))) {
+    $adminSettingMessage = 'Token keamanan tidak cocok. Muat ulang halaman.';
+    $adminSettingType = 'danger';
+  } elseif (!preg_match('/^[A-Za-z0-9_.@-]{1,64}$/', $newUser)) {
     $adminSettingMessage = 'Username admin hanya boleh berisi huruf, angka, titik, garis bawah, @, dan minus (maks. 64 karakter).';
     $adminSettingType = 'danger';
   } elseif (strlen($newPassword) < 10) {
@@ -72,7 +76,7 @@ function Pass(id) {
 <div class="row">
   <div class="col-12">
     <div class="card">
-      <div class="card-header"><h3 class="card-title"><i class="fa fa-gear"></i> Admin Settings &amp; Manager PPPoE</h3></div>
+      <div class="card-header"><h3 class="card-title"><i class="fa fa-gear"></i> Admin Settings</h3></div>
       <div class="card-body">
         <?php if ($adminSettingMessage !== '') { ?><div class="bg-<?= $adminSettingType; ?> pd-10 mb-3"><?= htmlspecialchars($adminSettingMessage, ENT_QUOTES, 'UTF-8'); ?></div><?php } ?>
         <div class="row">
@@ -86,12 +90,14 @@ function Pass(id) {
                   <tr><td>IP MikroTik / NAS</td><td><?= $radiusUiNasIp !== '' ? '<code>' . htmlspecialchars($radiusUiNasIp, ENT_QUOTES, 'UTF-8') . '</code>' : '<span class="text-muted">Belum ditambahkan</span>'; ?></td></tr>
                   <tr><td>Konfigurasi server</td><td><?= $radiusUiConfigured ? '<span class="text-green">Ditemukan</span>' : '<span class="text-warning">Belum disiapkan</span>'; ?></td></tr>
                 </table>
+                <?php if ($radiusUiConfigured) { ?><a href="./admin.php?id=radius-dashboard" class="group-item group-item-md"><i class="fa fa-external-link"></i> Open</a><?php } ?>
                 <a href="./admin.php?id=radius-nas" class="group-item group-item-md"><i class="fa fa-plus"></i> Add Router — RADIUS NAS</a>
               </div>
             </div>
           </div>
           <div class="col-md-6">
             <form autocomplete="off" method="post" action="./admin.php?id=sessions">
+              <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['admin_csrf'], ENT_QUOTES, 'UTF-8'); ?>"/>
               <div class="card">
                 <div class="card-header"><h3 class="card-title"><i class="fa fa-user-circle"></i> Admin Setting</h3></div>
                 <div class="card-body">
@@ -128,7 +134,7 @@ function Pass(id) {
             </form>
           </div>
         </div>
-        <p class="text-muted mb-0">Manager PPPoE, billing, TriPay, WhatsApp, paket/FUP, user RADIUS, dan isolir diatur dari menu kiri. Jalur billing Full RADIUS tidak menggunakan RouterOS API.</p>
+        <p class="text-muted mb-0">Klik Open pada router untuk mengelola PPPoE/Hotspot, billing, TriPay, WhatsApp, paket/FUP, dan isolir. Jalur billing Full RADIUS tidak menggunakan RouterOS API.</p>
       </div>
     </div>
   </div>

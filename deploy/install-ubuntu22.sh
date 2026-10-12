@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+umask 027
+. /etc/os-release
+if [[ "${ID:-}" != ubuntu || "${VERSION_ID:-}" != 22.04 ]]; then
+  echo "Gunakan CT Ubuntu 22.04 LTS." >&2; exit 1
+fi
 APP_DIR="${APP_DIR:-/var/www/mikhmon}"
 WEB_USER="www-data"
 PHP_VERSION="8.2"
@@ -9,7 +14,7 @@ if [[ ! -f "${APP_DIR}/admin.php" ]]; then echo "admin.php tidak ditemukan di ${
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl software-properties-common unzip rsync apache2 mariadb-server cron logrotate openssl
+apt-get install -y ca-certificates curl software-properties-common unzip rsync apache2 mariadb-server cron logrotate openssl python3 util-linux
 add-apt-repository -y ppa:ondrej/php
 apt-get update
 apt-get install -y "php${PHP_VERSION}" "php${PHP_VERSION}-cli" "php${PHP_VERSION}-curl" "php${PHP_VERSION}-mbstring" "php${PHP_VERSION}-xml" "php${PHP_VERSION}-zip" "php${PHP_VERSION}-mysql" "libapache2-mod-php${PHP_VERSION}"
@@ -62,7 +67,7 @@ find "${APP_DIR}" -type d -exec chmod 0755 {} \;
 find "${APP_DIR}" -type f -exec chmod 0644 {} \;
 chmod -R 0750 "${APP_DIR}/storage"
 # File konfigurasi runtime harus bisa dibaca dan diperbarui oleh panel PHP.
-chown "${WEB_USER}:${WEB_USER}" "${CONFIG_FILE}"
+chown "${WEB_USER}:${WEB_USER}" "${CONFIG_FILE}" "${APP_DIR}/include/quickbt.php"
 chmod 0640 "${CONFIG_FILE}"
 chmod +x "${APP_DIR}/cron/pppoe_profile_automation.php" "${APP_DIR}/cron/fonnte_log_cleanup.php" || true
 
@@ -76,6 +81,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EOF
 chmod 0644 /etc/cron.d/mikhmon
 systemctl enable --now apache2 mariadb cron
+apache2ctl configtest
 systemctl reload apache2
 APP_DIR="${APP_DIR}" PHP_VERSION="${PHP_VERSION}" bash "${APP_DIR}/deploy/install-isolir-portal.sh"
 php -v | head -1

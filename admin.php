@@ -25,8 +25,8 @@ ob_start("ob_gzhandler");
 $url = $_SERVER['REQUEST_URI'];
 
 // load session MikroTik
-$session = $_GET['session'];
-$id = $_GET['id'];
+$session = (string)($_GET['session'] ?? '');
+$id = (string)($_GET['id'] ?? 'sessions');
 
 // Legacy RouterOS-control screens are intentionally disabled in Full RADIUS mode.
 if (in_array((string)$id, array('reboot', 'shutdown', 'remove-session', 'editor'), true)) {
@@ -73,7 +73,9 @@ if ($id == "tripay-callback") {
 }
 include_once('./include/headhtml.php');
 include('./include/config.php');
-include('./include/readcfg.php');
+$useradm = explode('<|<', (string)($data['mikhmon'][1] ?? ''))[1] ?? '';
+$passadm = explode('>|>', (string)($data['mikhmon'][2] ?? ''))[1] ?? '';
+$idleto = 'disable';
 
 include_once('./lib/decrypt_helper.php');
 include_once('./lib/formatbytesbites.php');
@@ -87,6 +89,7 @@ if ($id == "login" || substr($url, -1) == "p") {
     $user = $_POST['user'];
     $pass = $_POST['pass'];
     if ($user == $useradm && $pass == decrypt($passadm)) {
+      session_regenerate_id(true);
       $_SESSION["mikhmon"] = $user;
 
         echo "<script>window.location='./admin.php?id=sessions'</script>";
@@ -117,6 +120,9 @@ if ($id == "login" || substr($url, -1) == "p") {
         return false;
     };
     </script>';*/
+} elseif ($id == "radius-dashboard" || $id == "radius-accounting") {
+  include_once('./include/menu.php');
+  include_once('./settings/radius-dashboard.php');
 } elseif ($id == "fonnte") {
   include_once('./include/menu.php');
   include_once('./settings/fonnte.php');
@@ -135,7 +141,7 @@ if ($id == "login" || substr($url, -1) == "p") {
 } elseif ($id == "billing-integrations") {
   include_once('./include/menu.php');
   include_once('./settings/billing-integrations.php');
-} elseif ($id == "billing" && (!empty($session) || is_file('/etc/mikhmon/radius.php'))) {
+} elseif ($id == "billing") {
   include_once('./include/menu.php');
   include_once('./settings/billing.php');
 } elseif ($id == "tripay-settings") {

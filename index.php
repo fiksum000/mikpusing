@@ -17,7 +17,7 @@ if ((string)($_GET['id'] ?? '') === 'tripay-callback') {
 if (!isset($_SESSION['mikhmon'])) {
     header('Location: ./admin.php?id=login', true, 302);
 } else {
-    header('Location: ./admin.php?id=sessions', true, 302);
+    header('Location: ./admin.php?id=' . (isset($_GET['session']) ? 'radius-dashboard' : 'sessions'), true, 302);
 }
 exit;
 ?>

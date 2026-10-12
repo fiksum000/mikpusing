@@ -24,7 +24,9 @@ jobs:
           set -o pipefail
           find . -type f -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l
       - name: Run pure PHP regression smoke tests
-        run: php tests/smoke.php
+        run: |
+          php tests/smoke.php
+          python3 tests/callback-http.py
       - name: Check Billing and RADIUS NAS inline JavaScript
         run: |
           python3 - <<'PY'
@@ -58,3 +60,28 @@ jobs:
             bash -n "$f"
             echo "OK: $f"
           done
+
+  ubuntu-install:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install complete stack on disposable Ubuntu VM
+        run: |
+          sudo mkdir -p /var/www/mikhmon
+          sudo rsync -a --exclude=.git ./ /var/www/mikhmon/
+          sudo env APP_DIR=/var/www/mikhmon RADIUS_SERVER_IP=192.0.2.10 RADIUS_NAS_IP=192.0.2.2 bash /var/www/mikhmon/deploy/install-full-radius.sh
+      - name: Database integration and repeat installation
+        run: |
+          cd /var/www/mikhmon
+          sudo env MIKPUSING_TEST_DATABASE=1 php tests/radius-integration.php
+          sudo sha256sum /etc/mikhmon/radius.php > /tmp/radius-before.sha
+          sudo env APP_DIR=/var/www/mikhmon bash deploy/install-full-radius.sh
+          sudo sha256sum --check /tmp/radius-before.sha
+          sudo systemctl restart apache2 mariadb freeradius cron
+          sudo bash deploy/preflight.sh
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          sudo systemctl --no-pager status apache2 mariadb freeradius cron || true
+          sudo journalctl -u apache2 -u freeradius -n 60 --no-pager || true

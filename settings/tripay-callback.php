@@ -29,6 +29,7 @@ if ($event !== '' && $event !== 'payment_status') {
 }
 $merchantRef = trim((string)($payload['merchant_ref'] ?? ''));
 $status = strtoupper(trim((string)($payload['status'] ?? '')));
+if (!in_array($status, array('UNPAID', 'PAID', 'FAILED', 'EXPIRED', 'CANCELED', 'CANCELLED', 'REFUND', 'REFUNDED'), true)) tripayCallbackRespond(400, array('success' => false, 'message' => 'Unsupported payment status'));
 $reference = trim((string)($payload['reference'] ?? ''));
 if ($merchantRef === '' || $reference === '' || $status === '') {
   tripayCallbackRespond(400, array('success' => false, 'message' => 'Missing transaction fields'));

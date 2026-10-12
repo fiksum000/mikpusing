@@ -95,6 +95,8 @@ if ($autoCheckoutReady) {
 
         $invoice['payment_method'] = $autoMethod;
         try {
+          // Persist intent before the remote call: timeout/crash must not create a second transaction.
+          if (!billingUpdateInvoice($invoiceNo, array('status' => 'pending', 'payment_method' => $autoMethod, 'tripay_reference' => '', 'payment_url' => ''))) throw new RuntimeException('Tidak dapat menyimpan status checkout.');
           $result = tripayCreateTransaction($invoice);
           $checkout = !empty($result['data']['checkout_url']) ? trim((string)$result['data']['checkout_url']) : '';
           $reference = !empty($result['data']['reference']) ? trim((string)$result['data']['reference']) : '';

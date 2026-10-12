@@ -96,73 +96,18 @@ if (!function_exists('customerPath')) {
    * FUP group. This lets a paid subscriber return to the right package later.
    */
   function customerNormalProfileForSync($profile) {
-    static $profileMap = null;
     $profile = trim((string)$profile);
     if ($profile === '' || strtoupper($profile) === 'ISOLIR') return $profile;
-    if ($profileMap === null) {
-      $profileMap = array();
-      if (!function_exists('pppoePackageRead')) require_once __DIR__ . '/pppoe_packages.php';
-      $config = function_exists('pppoePackageRead') ? pppoePackageRead() : array();
-      foreach ((array)($config['packages'] ?? array()) as $package) {
-        $normal = trim((string)($package['normal_profile'] ?? ''));
-        $fup = trim((string)($package['fup_profile'] ?? ''));
-        if ($normal !== '') $profileMap[$normal] = $normal;
-        if ($fup !== '' && $normal !== '') $profileMap[$fup] = $normal;
+    if (!function_exists('pppoePackageForProfile')) require_once __DIR__ . '/pppoe_packages.php';
+    if (function_exists('pppoePackageForProfile')) {
+      $package = pppoePackageForProfile($profile);
+      if (is_array($package)
+          && trim((string)($package['fup_profile'] ?? '')) === $profile
+          && trim((string)($package['normal_profile'] ?? '')) !== '') {
+        return trim((string)$package['normal_profile']);
       }
     }
-    return $profileMap[$profile] ?? $profile;
-  }
-
-  /**
-   * Apply imported customer metadata with one lock/write for the whole CSV.
-   * This does not create authentication credentials; usernames must already
-   * exist in FreeRADIUS and profile changes must have been applied there first.
-   */
-  function customerBulkUpdateMetadata($items, $routerSession = 'RADIUS') {
-    return customerWithLock(function (&$rows) use ($items, $routerSession) {
-      $index = array();
-      foreach ($rows as $i => $row) {
-        $index[(string)($row['router_session'] ?? '') . '|' . (string)($row['username'] ?? '')] = $i;
-      }
-      $updated = 0;
-      foreach ((array)$items as $item) {
-        $username = trim((string)($item['username'] ?? ''));
-        if ($username === '') continue;
-        $key = (string)$routerSession . '|' . $username;
-        $profile = trim((string)($item['profile'] ?? ''));
-        if (isset($index[$key])) {
-          $rowIndex = $index[$key];
-          $rows[$rowIndex]['name'] = trim((string)($item['name'] ?? '')) ?: $username;
-          $rows[$rowIndex]['phone'] = trim((string)($item['phone'] ?? ''));
-          $rows[$rowIndex]['email'] = trim((string)($item['email'] ?? ''));
-          $rows[$rowIndex]['amount'] = max(0, (int)($item['amount'] ?? 0));
-          $rows[$rowIndex]['due_day'] = min(31, max(1, (int)($item['due_day'] ?? 20)));
-          if ($profile !== '' && strtoupper($profile) !== 'ISOLIR') {
-            $rows[$rowIndex]['profile'] = $profile;
-            $rows[$rowIndex]['normal_profile'] = customerNormalProfileForSync($profile);
-          }
-          $rows[$rowIndex]['last_sync'] = date('Y-m-d H:i:s');
-        } else {
-          $rows[] = array(
-            'username' => $username,
-            'name' => trim((string)($item['name'] ?? '')) ?: $username,
-            'phone' => trim((string)($item['phone'] ?? '')),
-            'email' => trim((string)($item['email'] ?? '')),
-            'amount' => max(0, (int)($item['amount'] ?? 0)),
-            'due_day' => min(31, max(1, (int)($item['due_day'] ?? 20))),
-            'router_session' => (string)$routerSession,
-            'profile' => $profile,
-            'normal_profile' => $profile !== '' ? customerNormalProfileForSync($profile) : '',
-            'status' => 'active', 'mikrotik_comment' => '',
-            'last_sync' => date('Y-m-d H:i:s')
-          );
-          $index[$key] = count($rows) - 1;
-        }
-        $updated++;
-      }
-      if ($updated === 0) return 0;
-      return array('__customer_write' => true, 'value' => $updated);
-    });
+    return $profile;
   }
 
   function customerFind($username, $routerSession = null) {

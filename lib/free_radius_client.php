@@ -163,7 +163,7 @@ class RadiusClient {
     return $rows;
   }
 
-  private function accountingStatePath() { return __DIR__ . '/../storage/radius_accounting.json'; }
+  private function accountingStatePath() { return getenv('MIKHMON_ACCOUNTING_FILE') ?: __DIR__ . '/../storage/radius_accounting.json'; }
 
   /** Return the sampled monthly usage map: username => bytes. */
   public function getMonthlyUsageMap($period = null) {
@@ -199,7 +199,7 @@ class RadiusClient {
     $monthStart = $month->format('Y-m-d H:i:s');
     $monthEnd = $month->modify('+1 month')->format('Y-m-d H:i:s');
     $sql = "SELECT radacctid, acctuniqueid, username, acctstarttime, acctstoptime,
-                   acctinputoctets, acctoutputoctets, acctinputgigawords, acctoutputgigawords
+                   acctinputoctets, acctoutputoctets
             FROM radacct
             WHERE acctstarttime < ? AND (acctstoptime IS NULL OR acctstoptime >= ?)";
     $stmt = $this->db->prepare($sql);
@@ -217,7 +217,7 @@ class RadiusClient {
     if (!$lock || !flock($lock, LOCK_EX)) throw new RuntimeException('Tidak bisa mengunci file accounting state.');
     try {
       $state = is_file($path) ? json_decode(@file_get_contents($path) ?: '{}', true) : array();
-      if (!is_array($state)) $state = array();
+      if (!is_array($state)) throw new RuntimeException('Accounting JSON rusak; pulihkan backup sebelum sampling.');
       if (!isset($state['sessions']) || !is_array($state['sessions'])) $state['sessions'] = array();
       if (!isset($state['usage']) || !is_array($state['usage'])) $state['usage'] = array();
       if (!isset($state['usage'][$period]) || !is_array($state['usage'][$period])) $state['usage'][$period] = array();
@@ -228,8 +228,7 @@ class RadiusClient {
         if ($username === '') continue;
         $unique = trim((string)($row['acctuniqueid'] ?? ''));
         $sessionKey = $unique !== '' ? $unique : ('radacctid:' . (string)$row['radacctid']);
-        $current = max(0.0, (float)($row['acctinputoctets'] ?? 0) + (float)($row['acctoutputoctets'] ?? 0)
-          + (((float)($row['acctinputgigawords'] ?? 0) + (float)($row['acctoutputgigawords'] ?? 0)) * 4294967296));
+        $current = max(0.0, (float)($row['acctinputoctets'] ?? 0) + (float)($row['acctoutputoctets'] ?? 0));
         $old = $state['sessions'][$sessionKey] ?? null;
         if (is_array($old)) {
           $last = max(0.0, (float)($old['last_counter_bytes'] ?? $current));
