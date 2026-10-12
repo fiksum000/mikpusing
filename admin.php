@@ -135,39 +135,10 @@ if ($id == "login" || substr($url, -1) == "p") {
 } elseif ($id == "pppoe-packages") {
   include_once('./include/menu.php');
   include_once('./settings/pppoe-packages.php');
-} elseif ($id == "settings" && !empty($session) || $id == "settings" && !empty($router)) {
+} elseif ($id == "settings" || $id == "connect") {
+  // Full RADIUS mode registers the MikroTik as a NAS, without RouterOS API credentials.
   include_once('./include/menu.php');
-  include_once('./settings/settings.php');
-  echo '
-  <script type="text/javascript">
-    document.getElementById("sessname").onkeypress = function(e) {
-    var chr = String.fromCharCode(e.which);
-    if (" _!@#$%^&*()+=;|?,~".indexOf(chr) >= 0)
-        return false;
-    };
-    </script>';
-} elseif ($id == "connect"  && !empty($session)) {
-  ini_set("max_execution_time",5);  
-  include_once('./include/menu.php');
-  $API = new RouterosAPI();
-  $API->debug = false;
-  if ($API->connect($iphost, $userhost, decrypt($passwdhost))){
-    $_SESSION["connect"] = "<b class='text-green'>Connected</b>";
-    echo "<script>window.location='./?session=" . $session . "'</script>";
-  } else {
-    $_SESSION["connect"] = "<b class='text-red'>Not Connected</b>";
-    $nl = '\n';
-    if ($currency == in_array($currency, $cekindo['indo'])) {
-      echo "<script>alert('Mikhmon not connected!".$nl."Silakan periksa kembali IP, User, Password dan port API harus enable.".$nl."Jika menggunakan koneksi VPN, pastikan VPN tersebut terkoneksi.')</script>";
-    }else{
-      echo "<script>alert('Mikhmon not connected!".$nl."Please check the IP, User, Password and port API must be enabled.')</script>";
-    }
-    if($c == "settings"){
-      echo "<script>window.location='./admin.php?id=settings&session=" . $session . "'</script>";
-    }else{
-      echo "<script>window.location='./admin.php?id=sessions'</script>";
-    }
-  }
+  echo "<script>window.location='./admin.php?id=radius-nas'</script>";
 } elseif ($id == "uplogo"  && !empty($session)) {
   include_once('./include/menu.php');
   include_once('./settings/uplogo.php');
