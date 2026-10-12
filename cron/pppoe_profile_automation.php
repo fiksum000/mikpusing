@@ -115,7 +115,7 @@ foreach ($data as $sessionName => $sessionData) {
             $customerKey = (string)$sessionName . '|' . $username;
             $customer = $customersByRouterUser[$customerKey] ?? array();
             $comment = (string)($secret['comment'] ?? '');
-            $billingDay = isset($customer['due_day']) ? (int)$customer['due_day'] : $today;
+            $billingDay = isset($customer['due_day']) ? (int)$customer['due_day'] : 20;
             $isolateDayOverride = null;
             if (preg_match('/BILLING\s*=\s*(\d{1,2})/i', $comment, $m)) $billingDay = (int)$m[1];
             if (preg_match('/ISOLIR\\s*=\\s*(\\d{1,2})/i', $comment, $m)) $isolateDayOverride = (int)$m[1];
