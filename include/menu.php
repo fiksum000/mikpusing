@@ -237,6 +237,7 @@ if($idleto != "disable"){
 <?php 
 } ?>  
   <a href="./admin.php?id=sessions" class="menu <?= $ssesslist; ?>"><i class="fa fa-gear"></i> <?= $_admin_settings ?></a>
+  <a href="./admin.php?id=radius-users" class="menu"><i class="fa fa-users"></i> User RADIUS PPPoE/Hotspot</a>
   <a href="./admin.php?id=fonnte" class="menu <?= $sfonnte; ?>"><i class="fa fa-whatsapp"></i> WhatsApp Fonnte</a>
   <a href="./admin.php?id=fonnte-log" class="menu <?= $sfonnteLog; ?>"><i class="fa fa-list-alt"></i> Log WhatsApp</a>
   <a href="./admin.php?id=wa-templates" class="menu <?= $swaTemplates; ?>"><i class="fa fa-comments"></i> Template WhatsApp</a>
