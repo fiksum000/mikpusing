@@ -157,9 +157,9 @@ if (!isset($_SESSION["mikhmon"])) {
   } elseif ($id == "wa-templates") {
     $swaTemplates = "active";
     $mpage = "Template WhatsApp";
-  } elseif ($id == "billing") {
+  } elseif ($id == "billing" || $id == "billing-integrations") {
     $sbilling = "active";
-    $mpage = "Billing & TriPay";
+    $mpage = $id == "billing-integrations" ? "Billing & Integrasi" : "Billing & TriPay";
   } elseif ($id == "tripay-settings") {
     $stripaySettings = "active";
     $mpage = "Pengaturan TriPay";
@@ -242,6 +242,7 @@ if($idleto != "disable"){
   <a href="./admin.php?id=fonnte-log" class="menu <?= $sfonnteLog; ?>"><i class="fa fa-list-alt"></i> Log WhatsApp</a>
   <a href="./admin.php?id=wa-templates" class="menu <?= $swaTemplates; ?>"><i class="fa fa-comments"></i> Template WhatsApp</a>
   <a href="./admin.php?id=billing&session=<?= htmlspecialchars($session, ENT_QUOTES, 'UTF-8'); ?>" class="menu <?= $sbilling; ?>"><i class="fa fa-money"></i> Billing & TriPay</a>
+  <a href="./admin.php?id=billing-integrations" class="menu <?= $id == "billing-integrations" ? "active" : ""; ?>"><i class="fa fa-plug"></i> Integrasi Billing / MikroTik / RADIUS</a>
   <a href="./admin.php?id=tripay-settings" class="menu <?= $stripaySettings; ?>"><i class="fa fa-credit-card"></i> Pengaturan TriPay</a>
   <a href="./admin.php?id=pppoe-packages" class="menu <?= $spppoePackages; ?>"><i class="fa fa-sliders"></i> Profile PPPoE & FUP</a>
   <a href="./admin.php?id=settings&router=new-<?= rand(1111,9999) ?>" class="menu <?= $snsettings ?>"><i class="fa fa-plus"></i> <?= $_add_router ?></a>
