@@ -76,7 +76,7 @@ if (!function_exists('billingPath')) {
         if (!billingAtomicWriteUnlocked($rows)) throw new RuntimeException('Gagal menyimpan file invoice secara atomik.');
         return $outcome['value'] ?? true;
       }
-      return $outcome;
+      return is_array($outcome) && array_key_exists('value', $outcome) ? $outcome['value'] : $outcome;
     } finally {
       flock($lock, LOCK_UN);
       fclose($lock);
@@ -203,7 +203,7 @@ if (!function_exists('billingPath')) {
         $existing[$invoiceNo] = true;
         $created++;
       }
-      return array('__billing_write' => true, 'value' => $created);
+      return array('__billing_write' => $created > 0, 'value' => $created);
     });
   }
   function billingFindInvoice($invoiceNo) {

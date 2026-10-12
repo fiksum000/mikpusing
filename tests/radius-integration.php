@@ -22,12 +22,16 @@ try {
     $radius->db->query("UPDATE radacct SET acctinputoctets=acctinputoctets+100 WHERE acctuniqueid='ci-unique'");
     $radius->sampleAccountingCounters();
     verifyRadius($radius->getUsageBytes($username) === 4294967700.0, 'interim delta added once');
+    $radius->db->query("INSERT INTO radacct (acctsessionid, acctuniqueid, username, nasipaddress, acctstarttime, acctstoptime, acctinputoctets, acctoutputoctets) VALUES ('ci-old', 'ci-old-unique', 'ci-radius-user', '192.0.2.2', '2020-01-01', '2020-01-02', 1000, 2000)");
+    $radius->sampleAccountingCounters('2020-01');
+    $radius->sampleAccountingCounters('2020-01');
+    verifyRadius($radius->getUsageBytes($username, '2020-01') === 3000.0, 'stopped sessions are not counted again after 14 days');
     file_put_contents($tmp, '{');
     $rejected = false;
     try { $radius->sampleAccountingCounters(); } catch (RuntimeException $e) { $rejected = true; }
     verifyRadius($rejected && file_get_contents($tmp) === '{', 'corrupt accounting state preserved for recovery');
 } finally {
-    $radius->db->query("DELETE FROM radacct WHERE acctuniqueid='ci-unique'");
+    $radius->db->query("DELETE FROM radacct WHERE acctuniqueid IN ('ci-unique', 'ci-old-unique')");
     $radius->deleteUser($username);
     $radius->disconnect();
     foreach (glob($tmp . '*') ?: array() as $path) unlink($path);

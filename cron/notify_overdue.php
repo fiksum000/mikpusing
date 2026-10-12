@@ -11,6 +11,8 @@ require_once __DIR__ . '/../include/billing.php';
 require_once __DIR__ . '/../include/customers.php';
 require_once __DIR__ . '/../include/fonnte_log.php';
 require_once __DIR__ . '/../include/wa_templates.php';
+require_once __DIR__ . '/../include/job_runtime.php';
+$batchStarted = microtime(true); $batchAttempted = 0;
 
 $runLockPath = __DIR__ . '/../storage/notify-overdue.lock';
 $runLock = @fopen($runLockPath, 'c');
@@ -34,13 +36,17 @@ if (!is_dir($stateDir) && !@mkdir($stateDir, 0750, true) && !is_dir($stateDir)) 
 $state = array();
 if (is_file($statePath)) {
     $parsed = json_decode(@file_get_contents($statePath) ?: '{}', true);
-    if (is_array($parsed)) $state = $parsed;
+    if (!is_array($parsed)) throw new RuntimeException('Reminder JSON rusak; pulihkan backup.');
+    $state = $parsed;
 }
 $today = date('Y-m-d');
 $todayTime = strtotime($today);
 $sent = 0; $skipped = 0; $failed = 0;
 
-foreach (billingReadInvoices() as $listedInvoice) {
+$reminderQueue = billingReadInvoices();
+usort($reminderQueue, function($a, $b) use ($state) { return strcmp($state['attempt:' . ($a['invoice_no'] ?? '')] ?? '', $state['attempt:' . ($b['invoice_no'] ?? '')] ?? ''); });
+foreach ($reminderQueue as $listedInvoice) {
+    if (mikhmonBatchExpired($batchStarted, $batchAttempted)) break;
     $invoiceNo = trim((string)($listedInvoice['invoice_no'] ?? ''));
     if ($invoiceNo === '') { $skipped++; continue; }
     $invoiceLock = billingAcquireInvoiceLock($invoiceNo);
@@ -82,6 +88,8 @@ foreach (billingReadInvoices() as $listedInvoice) {
       'kontak_admin' => (string)(getenv('MIKHMON_SUPPORT_PHONE') ?: ''),
     );
     $message = waTemplateRender($kind, $data);
+    $batchAttempted++;
+    $state['attempt:' . $invoiceNo] = date('c');
     $result = fonnteSendMessage($phone, $message, array('event' => $kind, 'invoice' => $invoiceNo));
     if (!empty($result['status'])) {
         $state[$stateKey] = date('c');
@@ -91,6 +99,8 @@ foreach (billingReadInvoices() as $listedInvoice) {
         $failed++;
         echo "FAILED invoice={$invoiceNo} type={$kind} reason=" . preg_replace('/\s+/', ' ', (string)($result['reason'] ?? 'unknown')) . "\n";
     }
+    $json = json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    if ($json === false || file_put_contents($statePath . '.tmp', $json, LOCK_EX) === false || !rename($statePath . '.tmp', $statePath)) throw new RuntimeException('Gagal menyimpan reminder state');
     } finally {
         billingReleaseInvoiceLock($invoiceLock);
     }

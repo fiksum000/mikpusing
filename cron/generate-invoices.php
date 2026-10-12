@@ -5,6 +5,9 @@
  */
 if (PHP_SAPI !== 'cli') { http_response_code(403); exit("CLI only\n"); }
 date_default_timezone_set(getenv('TZ') ?: 'Asia/Jakarta');
+require_once __DIR__ . '/../include/job_runtime.php';
+if (!mikhmonJobLock('generate-invoices')) exit(0);
+$batchStarted = microtime(true); $batchAttempted = 0;
 require_once __DIR__ . '/../lib/free_radius_client.php';
 require_once __DIR__ . '/../include/config.php';
 require_once __DIR__ . '/../include/customers.php';
@@ -60,7 +63,12 @@ if ($autoMethod !== '' && !$autoCheckoutReady) {
   mikhmonInvoiceLog("WARN auto_checkout disabled: check TriPay credentials and public HTTPS URL in Billing > Integrations");
 }
 if ($autoCheckoutReady) {
-  foreach (billingReadInvoices() as $listedInvoice) {
+  $deliveryQueue = billingReadInvoices();
+  usort($deliveryQueue, function($a, $b) { return strcmp((string)($a['delivery_attempt_at'] ?? ''), (string)($b['delivery_attempt_at'] ?? '')); });
+  foreach ($deliveryQueue as $listedInvoice) {
+    if (mikhmonBatchExpired($batchStarted, $batchAttempted)) break;
+    if (!in_array($listedInvoice['status'] ?? '', array('unpaid', 'failed', 'expired', 'pending'), true) || !empty($listedInvoice['invoice_notification_sent_at'])) continue;
+    if (($listedInvoice['status'] ?? '') === 'pending' && empty($listedInvoice['payment_url'])) continue;
     $invoiceNo = trim((string)($listedInvoice['invoice_no'] ?? ''));
     if ($invoiceNo === '') continue;
 
@@ -73,7 +81,7 @@ if ($autoCheckoutReady) {
 
     try {
       $invoice = billingFindInvoice($invoiceNo);
-      if (!$invoice || (string)($invoice['period'] ?? '') !== $period) continue;
+      if (!$invoice) continue;
       $status = strtolower((string)($invoice['status'] ?? 'unpaid'));
       if ($status === 'paid' || (int)($invoice['amount'] ?? 0) <= 0) continue;
 
@@ -83,6 +91,7 @@ if ($autoCheckoutReady) {
         continue;
       }
 
+      $batchAttempted++;
       $checkout = trim((string)($invoice['payment_url'] ?? ''));
       $reference = trim((string)($invoice['tripay_reference'] ?? ''));
       if ($checkout === '') {
@@ -93,6 +102,7 @@ if ($autoCheckoutReady) {
         }
         if (!in_array($status, array('unpaid','failed','expired'), true)) continue;
 
+        billingUpdateInvoice($invoiceNo, array('delivery_attempt_at' => date('c')));
         $invoice['payment_method'] = $autoMethod;
         try {
           // Persist intent before the remote call: timeout/crash must not create a second transaction.
@@ -146,6 +156,8 @@ if ($autoCheckoutReady) {
         'jatuh_tempo' => (string)($invoice['due_date'] ?? ''),
         'link_bayar' => $checkout
       ));
+      
+      billingUpdateInvoice($invoiceNo, array('delivery_attempt_at' => date('c')));
       $sentResult = fonnteSendMessage($phone, $message, array('event' => 'invoice', 'invoice' => $invoiceNo));
       if (empty($sentResult['status'])) {
         $automaticLinksFailed++;
@@ -170,5 +182,5 @@ if ($autoCheckoutReady) {
 $summary = "Invoice generation period={$period} backend={$backend} customers={$totalCustomers} created={$totalCreated} checkout_links={$automaticLinksCreated} checkout_failures={$automaticLinksFailed} errors={$errors} default_amount={$defaultAmount}";
 echo date('c') . ' ' . $summary . PHP_EOL;
 mikhmonInvoiceLog($summary);
-if ($errors > 0) exit(1);
+if ($errors > 0 || $automaticLinksFailed > 0) exit(1);
 ?>

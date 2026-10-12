@@ -2,6 +2,9 @@
 error_reporting(0);
 if (!isset($_SESSION['mikhmon'])) { header('Location:../admin.php?id=login'); exit; }
 require_once('./lib/free_radius_client.php');
+require_once('./lib/radius_pending.php');
+require_once('./include/job_runtime.php');
+$userChangeLock = null;
 
 if (empty($_SESSION['radius_users_csrf'])) $_SESSION['radius_users_csrf'] = bin2hex(random_bytes(32));
 $csrf = $_SESSION['radius_users_csrf'];
@@ -18,6 +21,8 @@ try {
     if (!hash_equals($csrf, $postedCsrf)) {
       $message = 'Permintaan ditolak: token keamanan tidak cocok. Muat ulang halaman.'; $messageType = 'danger';
     } else {
+      $userChangeLock = mikhmonJobLock('pppoe-profile-automation');
+      if (!$userChangeLock) throw new RuntimeException('Scheduler sedang berjalan. Coba lagi setelah selesai.');
       $action = (string)($_POST['action'] ?? '');
       $username = trim((string)($_POST['username'] ?? ''));
       if ($action === 'save') {
@@ -29,19 +34,22 @@ try {
         if (!in_array($group, $groups, true)) throw new InvalidArgumentException('Pilih group RADIUS yang sudah memiliki atribut reply.');
         if ($password !== '') {
           if (strlen($password) < 8) throw new InvalidArgumentException('Password minimal 8 karakter.');
+          radiusQueueReconnect($username, $group);
           $radius->upsertUser($username, $password, $group);
           $message = 'User RADIUS tersimpan. Password tidak ditampilkan kembali.'; $messageType = 'success';
         } else {
           $existing = false;
           foreach ($radius->listUsers() as $row) if (($row['username'] ?? '') === $username) { $existing = true; break; }
           if (!$existing) throw new InvalidArgumentException('Password wajib diisi untuk user baru.');
+          radiusQueueReconnect($username, $group);
           $radius->setProfile($username, $group);
           $message = 'Group user RADIUS berhasil diperbarui. Password lama tidak diubah.'; $messageType = 'success';
         }
       } elseif ($action === 'delete') {
         if (!preg_match('/^[A-Za-z0-9_.@-]{1,64}$/', $username)) throw new InvalidArgumentException('Username tidak valid.');
+        radiusQueueReconnect($username, 'deleted');
         $radius->deleteUser($username);
-        $message = 'User RADIUS dihapus dari tabel autentikasi. Sesi yang sudah aktif mungkin tetap tersambung sampai diputus oleh router.'; $messageType = 'success';
+        $message = 'User RADIUS dihapus dari tabel autentikasi. Pemutusan sesi aktif masuk antrean scheduler (maksimal satu siklus saat layanan sehat).'; $messageType = 'success';
       }
     }
   }
@@ -54,6 +62,8 @@ try {
 } catch (Throwable $e) {
   $message = 'RADIUS belum siap: ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8'); $messageType = 'danger';
 }
+if (is_resource($userChangeLock)) { flock($userChangeLock, LOCK_UN); fclose($userChangeLock); }
+if ($radius instanceof RadiusClient) $radius->disconnect();
 $total = count($users);
 $pageCount = max(1, (int)ceil($total / $pageSize));
 $page = min($page, $pageCount);

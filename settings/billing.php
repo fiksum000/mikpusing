@@ -160,10 +160,22 @@ if ($billingPostValid && isset($_POST['update_customer'])) {
   foreach (customerReadAll() as $customer) if ((string)($customer['router_session'] ?? '') === $billingSession) $customers[] = $customer;
 }
 $invoices = array_reverse(billingReadInvoices());
+$billingQuery = trim((string)($_GET['q'] ?? ''));
+if ($billingQuery !== '') {
+  $customers = array_values(array_filter($customers, function($row) use ($billingQuery) { return stripos(($row['username'] ?? '') . ' ' . ($row['name'] ?? ''), $billingQuery) !== false; }));
+  $invoices = array_values(array_filter($invoices, function($row) use ($billingQuery) { return stripos(($row['invoice_no'] ?? '') . ' ' . ($row['username'] ?? '') . ' ' . ($row['customer_name'] ?? ''), $billingQuery) !== false; }));
+}
+$billingPageCount = max(1, (int)ceil(max(count($customers), count($invoices)) / 50));
+$billingPage = min($billingPageCount, max(1, (int)($_GET['page'] ?? 1)));
+$customers = array_slice($customers, ($billingPage - 1) * 50, 50);
+$invoices = array_slice($invoices, ($billingPage - 1) * 50, 50);
 $methods = array('QRIS' => 'QRIS', 'DANA' => 'DANA', 'OVO' => 'OVO', 'SHOPEEPAY' => 'ShopeePay', 'BCAVA' => 'VA BCA', 'BRIVA' => 'VA BRI', 'MANDIRIVA' => 'VA Mandiri', 'ALFAMART' => 'Alfamart', 'INDOMARET' => 'Indomaret');
 ?>
 <div class="row">
   <div class="col-12">
+    <form method="get" action="admin.php"><input type="hidden" name="id" value="billing"/><input name="q" value="<?= htmlspecialchars($billingQuery, ENT_QUOTES, 'UTF-8'); ?>" placeholder="Cari pelanggan / invoice"/><button>Cari</button></form>
+    <p>Halaman <?= $billingPage; ?>/<?= $billingPageCount; ?> · Maksimal 50 pelanggan/invoice per halaman.
+    <?php for ($p = max(1, $billingPage - 2); $p <= min($billingPageCount, $billingPage + 2); $p++) { ?><a class="group-item" href="admin.php?id=billing&amp;page=<?= $p; ?>&amp;q=<?= rawurlencode($billingQuery); ?>"><?= $p; ?></a><?php } ?></p>
     <div class="card"><div class="card-header"><h3 class="card-title"><i class="fa fa-money"></i> Billing Bulanan & TriPay</h3></div><div class="card-body">
       <div class="mb-3"><a href="./admin.php?id=billing-integrations" class="group-item group-item-md"><i class="fa fa-plug"></i> Pengaturan Integrasi MikroTik / RADIUS & Perintah Copy-Paste</a></div>
       <?php if ($billingMessage !== '') { ?><div class="bg-<?= $billingType; ?> pd-10 radius-3 mb-3"><?= $billingMessage; ?></div><?php } ?>

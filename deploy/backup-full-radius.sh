@@ -20,7 +20,11 @@ for service in cron apache2 freeradius; do
 done
 # Drain an automation already started before cron was stopped.
 exec 9>"$APP_DIR/storage/pppoe-profile-automation.lock"
-flock -w 120 9
+flock -w 300 9
+exec 8>"$APP_DIR/storage/generate-invoices.lock"
+flock -w 300 8
+exec 7>"$APP_DIR/storage/notify-overdue.lock"
+flock -w 300 7
 mysqldump --single-transaction --routines --triggers --databases "$DB" > "$DEST/radius.sql"
 tar --exclude='./.git' --exclude='./storage/backups' -czf "$DEST/app.tar.gz" -C "$APP_DIR" .
 tar -czf "$DEST/system.tar.gz" -C / etc/mikhmon etc/freeradius/3.0 etc/cron.d/mikhmon etc/cron.d/mikhmon-radius etc/apache2/sites-available/mikhmon.conf etc/apache2/sites-available/mikhmon-isolir.conf root/mikpusing-radius-credentials.txt

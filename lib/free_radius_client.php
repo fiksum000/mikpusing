@@ -202,13 +202,7 @@ class RadiusClient {
                    acctinputoctets, acctoutputoctets
             FROM radacct
             WHERE acctstarttime < ? AND (acctstoptime IS NULL OR acctstoptime >= ?)";
-    $stmt = $this->db->prepare($sql);
-    $stmt->bind_param('ss', $monthEnd, $monthStart);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $rows = array();
-    while ($row = $result->fetch_assoc()) $rows[] = $row;
-    $stmt->close();
+
 
     $path = $this->accountingStatePath();
     $dir = dirname($path);
@@ -216,6 +210,13 @@ class RadiusClient {
     $lock = @fopen($path . '.lock', 'c');
     if (!$lock || !flock($lock, LOCK_EX)) throw new RuntimeException('Tidak bisa mengunci file accounting state.');
     try {
+    $stmt = $this->db->prepare($sql);
+    $stmt->bind_param('ss', $monthEnd, $monthStart);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $rows = array();
+    while ($row = $result->fetch_assoc()) $rows[] = $row;
+    $stmt->close();
       $state = is_file($path) ? json_decode(@file_get_contents($path) ?: '{}', true) : array();
       if (!is_array($state)) throw new RuntimeException('Accounting JSON rusak; pulihkan backup sebelum sampling.');
       if (!isset($state['sessions']) || !is_array($state['sessions'])) $state['sessions'] = array();
@@ -247,10 +248,11 @@ class RadiusClient {
         );
         $sampled++;
       }
-      // Keep current and recent history only.
+      // Keep every session the current SQL window can still return; pruning earlier
+      // would count old stopped sessions again on the next sample.
       foreach ($state['sessions'] as $key => $session) {
         $stop = !empty($session['acctstoptime']) ? strtotime($session['acctstoptime']) : false;
-        if ($stop !== false && $stop < ($now - 14 * 86400)) unset($state['sessions'][$key]);
+        if ($stop !== false && $stop < strtotime($monthStart)) unset($state['sessions'][$key]);
       }
       ksort($state['usage']);
       if (count($state['usage']) > 18) $state['usage'] = array_slice($state['usage'], -18, null, true);

@@ -4,6 +4,7 @@ function radiusNavigation($page) {
     $inside = array(
         'radius-dashboard' => array('dashboard', 'Dashboard'),
         'radius-users' => array('users', 'Pelanggan PPPoE / Hotspot'),
+        'bulk-import' => array('upload', 'Impor Pelanggan CSV'),
         'radius-accounting' => array('exchange', 'Sesi & Accounting'),
         'pppoe-packages' => array('sliders', 'Paket & FUP'),
         'billing' => array('money', 'Billing / Invoice'),

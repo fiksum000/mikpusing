@@ -106,6 +106,16 @@ values = {
 }
 with open(path, encoding='utf-8') as f:
     lines = f.readlines()
+# The distribution's MySQL example enables a TLS block pointing at sample
+# certificate paths. This installer uses MariaDB on localhost, not remote SQL.
+tls_depth = 0
+for i, line in enumerate(lines):
+    if not tls_depth and re.match(r'^\s*tls\s*\{', line):
+        tls_depth = line.count('{') - line.count('}')
+        lines[i] = '# ' + line
+    elif tls_depth:
+        tls_depth += line.split('#', 1)[0].count('{') - line.split('#', 1)[0].count('}')
+        lines[i] = '# ' + line
 seen = set()
 for i, line in enumerate(lines):
     m = re.match(r'^(\s*)#?\s*(driver|dialect|server|port|login|password|radius_db|read_clients)\s*=.*$', line)

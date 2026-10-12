@@ -1,205 +1,56 @@
 <?php
-/*
- *  Copyright (C) 2018 Laksamadi Guko.
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
-session_start();
-// hide all error
-error_reporting(0);
-
-ob_start("ob_gzhandler");
-
-// check url
-$url = $_SERVER['REQUEST_URI'];
-
-// load session MikroTik
-$session = (string)($_GET['session'] ?? '');
+// Full RADIUS front controller. Only explicitly registered management routes run.
+session_start(array('cookie_httponly' => true, 'cookie_samesite' => 'Lax', 'cookie_secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'));
+date_default_timezone_set(getenv('TZ') ?: 'Asia/Jakarta');
+ini_set('display_errors', '0');
+error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE);
+ob_start();
 $id = (string)($_GET['id'] ?? 'sessions');
-
-// Legacy RouterOS-control screens are intentionally disabled in Full RADIUS mode.
-if (in_array((string)$id, array('reboot', 'shutdown', 'remove-session', 'editor'), true)) {
-  header('Location: ./admin.php?id=sessions', true, 302);
-  exit;
+$session = ''; $url = (string)($_SERVER['REQUEST_URI'] ?? '');
+if (!is_file(__DIR__ . '/include/config.php')) { http_response_code(503); exit('Konfigurasi belum tersedia. Jalankan installer Full RADIUS di CT.'); }
+require __DIR__ . '/include/config.php';
+require_once __DIR__ . '/lib/decrypt_helper.php';
+if ($id === 'tripay-callback') {
+    session_write_close();
+    require __DIR__ . '/settings/tripay-callback.php';
+    exit;
 }
-$c = $_GET['c'];
-$router = $_GET['router'];
-$logo = $_GET['logo'];
-
-$ids = array(
-  "editor",
-  "uplogo",
-  "settings",
-);
-
-// lang
-include('./lang/isocodelang.php');
-include('./include/lang.php');
-include('./lang/'.$langid.'.php');
-
-// quick bt
-include('./include/quickbt.php');
-
-// theme
-include('./include/theme.php');
-include('./settings/settheme.php');
-include('./settings/setlang.php');
-if ($_SESSION['theme'] == "") {
-    $theme = $theme;
-    $themecolor = $themecolor;
-  } else {
-    $theme = $_SESSION['theme'];
-    $themecolor = $_SESSION['themecolor'];
-}
-
-
-// load config
-if ($id == "tripay-callback") {
-  include_once('./include/config.php');
-  include_once('./lib/decrypt_helper.php');
-  include_once('./settings/tripay-callback.php');
-  exit;
-}
-include_once('./include/headhtml.php');
-include('./include/config.php');
+if ($id === 'logout') { $_SESSION = array(); session_destroy(); header('Location: ./admin.php?id=login'); exit; }
 $useradm = explode('<|<', (string)($data['mikhmon'][1] ?? ''))[1] ?? '';
 $passadm = explode('>|>', (string)($data['mikhmon'][2] ?? ''))[1] ?? '';
-$idleto = 'disable';
-
-include_once('./lib/decrypt_helper.php');
-include_once('./lib/formatbytesbites.php');
-include_once('./include/fonnte_log.php');
-?>
-    
-<?php
-if ($id == "login" || substr($url, -1) == "p") {
-
-  if (isset($_POST['login'])) {
-    $user = $_POST['user'];
-    $pass = $_POST['pass'];
-    if ($user == $useradm && $pass == decrypt($passadm)) {
-      session_regenerate_id(true);
-      $_SESSION["mikhmon"] = $user;
-
-        echo "<script>window.location='./admin.php?id=sessions'</script>";
-    
-    } else {
-      $error = '<div style="width: 100%; padding:5px 0px 5px 0px; border-radius:5px;" class="bg-danger"><i class="fa fa-ban"></i> Alert!<br>Invalid username or password.</div>';
+$error = '';
+if ($id === 'login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if ($useradm !== '' && hash_equals($useradm, (string)($_POST['user'] ?? '')) && hash_equals(decrypt($passadm), (string)($_POST['pass'] ?? ''))) {
+        session_regenerate_id(true);
+        $_SESSION['mikhmon'] = $useradm;
+        header('Location: ./admin.php?id=sessions'); exit;
     }
-  }
-  
-
-  include_once('./include/login.php');
-} elseif ($id == "tripay-callback") {
-  include_once('./settings/tripay-callback.php');
-} elseif (!isset($_SESSION["mikhmon"])) {
-  echo "<script>window.location='./admin.php?id=login'</script>";
-} elseif (substr($url, -1) == "/" || substr($url, -4) == ".php") {
-  echo "<script>window.location='./admin.php?id=sessions'</script>";
-
-} elseif ($id == "sessions") {
-  $_SESSION["connect"] = "";
-  include_once('./include/menu.php');
-  include_once('./settings/sessions.php');
-  /*echo '
-  <script type="text/javascript">
-    document.getElementById("sessname").onkeypress = function(e) {
-    var chr = String.fromCharCode(e.which);
-    if (" _!@#$%^&*()+=;|?,~".indexOf(chr) >= 0)
-        return false;
-    };
-    </script>';*/
-} elseif ($id == "radius-dashboard" || $id == "radius-accounting") {
-  include_once('./include/menu.php');
-  include_once('./settings/radius-dashboard.php');
-} elseif ($id == "fonnte") {
-  include_once('./include/menu.php');
-  include_once('./settings/fonnte.php');
-} elseif ($id == "fonnte-log") {
-  include_once('./include/menu.php');
-  include_once('./settings/fonnte-log.php');
-} elseif ($id == "wa-templates") {
-  include_once('./include/menu.php');
-  include_once('./settings/wa-templates.php');
-} elseif ($id == "radius-users") {
-  include_once('./include/menu.php');
-  include_once('./settings/radius-users.php');
-} elseif ($id == "radius-nas") {
-  include_once('./include/menu.php');
-  include_once('./settings/radius-nas.php');
-} elseif ($id == "billing-integrations") {
-  include_once('./include/menu.php');
-  include_once('./settings/billing-integrations.php');
-} elseif ($id == "billing") {
-  include_once('./include/menu.php');
-  include_once('./settings/billing.php');
-} elseif ($id == "tripay-settings") {
-  include_once('./include/menu.php');
-  include_once('./settings/tripay-settings.php');
-} elseif ($id == "pppoe-packages") {
-  include_once('./include/menu.php');
-  include_once('./settings/pppoe-packages.php');
-} elseif ($id == "settings" || $id == "connect") {
-  // Full RADIUS mode registers the MikroTik as a NAS, without RouterOS API credentials.
-  include_once('./include/menu.php');
-  echo "<script>window.location='./admin.php?id=radius-nas'</script>";
-} elseif ($id == "uplogo"  && !empty($session)) {
-  include_once('./include/menu.php');
-  include_once('./settings/uplogo.php');
-} elseif ($id == "reboot"  && !empty($session)) {
-  include_once('./process/reboot.php');
-} elseif ($id == "shutdown"  && !empty($session)) {
-  include_once('./process/shutdown.php');
-} elseif ($id == "remove-session" && $session != "") {
-  include_once('./include/menu.php');
-  $fc = file("./include/config.php" );
-  $f = fopen("./include/config.php", "w");
-  $q = "'";
-  $rem = '$data['.$q.$session.$q.']';
-  foreach ($fc as $line) {
-    if (!strstr($line, $rem))
-      fputs($f, $line);
-  }
-  fclose($f);
-  echo "<script>window.location='./admin.php?id=sessions'</script>";
-} elseif ($id == "about") {
-  include_once('./include/menu.php');
-  include_once('./include/about.php');
-} elseif ($id == "logout") {
-  include_once('./include/menu.php');
-  echo "<b class='cl-w'><i class='fa fa-circle-o-notch fa-spin' style='font-size:24px'></i> Logout...</b>";
-  session_destroy();
-  echo "<script>window.location='./admin.php?id=login'</script>";
-} elseif ($id == "remove-logo" && $logo != ""  && !empty($session)) {
-  include_once('./include/menu.php');
-  $logopath = "./img/";
-  $remlogo = $logopath . $logo;
-  unlink("$remlogo");
-  echo "<script>window.location='./admin.php?id=uplogo&session=" . $session . "'</script>";
-} elseif ($id == "editor"  && !empty($session)) {
-  include_once('./include/menu.php');
-  include_once('./settings/vouchereditor.php');
-} elseif (empty($id)) {
-  echo "<script>window.location='./admin.php?id=sessions'</script>";
-} elseif(in_array($id, $ids) && empty($session)){
-	echo "<script>window.location='./admin.php?id=sessions'</script>";
+    $error = '<div class="bg-danger pd-10">Username atau password salah.</div>';
+}
+if ($id !== 'login' && !isset($_SESSION['mikhmon'])) { header('Location: ./admin.php?id=login'); exit; }
+if ($id === 'settings' || $id === 'connect') { header('Location: ./admin.php?id=radius-nas'); exit; }
+$routes = array('sessions', 'radius-nas', 'radius-dashboard', 'radius-accounting', 'radius-users', 'bulk-import', 'pppoe-packages', 'billing', 'billing-integrations', 'tripay-settings', 'fonnte', 'fonnte-log', 'wa-templates');
+if ($id !== 'login' && !in_array($id, $routes, true)) { http_response_code(404); exit('Halaman tidak tersedia pada Full RADIUS.'); }
+require __DIR__ . '/lang/isocodelang.php';
+require __DIR__ . '/include/lang.php';
+require __DIR__ . '/lang/' . $langid . '.php';
+require __DIR__ . '/include/quickbt.php';
+require __DIR__ . '/include/theme.php';
+$hotspotname = 'Full RADIUS'; $idleto = 'disable';
+require __DIR__ . '/include/headhtml.php';
+if ($id === 'login') {
+    require __DIR__ . '/include/login.php';
+} else {
+    require __DIR__ . '/include/menu.php';
+    try { require __DIR__ . '/settings/' . ($id === 'radius-accounting' ? 'radius-dashboard' : $id) . '.php'; }
+    catch (Throwable $e) {
+        error_log('Management page ' . $id . ': ' . $e->getMessage());
+        http_response_code(500);
+        echo '<div class="bg-danger pd-10">Operasi tidak selesai. Periksa log aplikasi dan preflight CT sebelum mencoba lagi.</div>';
+    }
+    echo '</div>';
 }
 ?>
-<?php if (isset($_SESSION["mikhmon"]) && $id !== "login") { ?></div>
-<script src="js/mikhmon-ui.<?= $theme; ?>.min.js"></script>
-<?php } ?>
-<script src="js/mikhmon.js?t=<?= str_replace(" ","_",date("Y-m-d H:i:s")); ?>"></script>
-</div>
-</body>
-</html>
+<?php if ($id !== 'login') { ?><script src="js/mikhmon-ui.<?= htmlspecialchars($theme, ENT_QUOTES, 'UTF-8'); ?>.min.js"></script><?php } ?>
+<script src="js/mikhmon.js"></script>
+</div></body></html>

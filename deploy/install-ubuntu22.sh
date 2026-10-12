@@ -75,8 +75,8 @@ cat >/etc/cron.d/mikhmon <<EOF
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 */5 * * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/pppoe_profile_automation.php --apply >> storage/pppoe-automation.log 2>&1
-5 0 * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/generate-invoices.php >> storage/invoice-generation.log 2>&1
-0 9 * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/notify_overdue.php >> storage/notify-overdue.log 2>&1
+*/5 * * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/generate-invoices.php >> storage/invoice-generation.log 2>&1
+*/5 9-17 * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/notify_overdue.php >> storage/notify-overdue.log 2>&1
 10 2 * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/fonnte_log_cleanup.php >> storage/fonnte-cleanup.log 2>&1
 EOF
 chmod 0644 /etc/cron.d/mikhmon
@@ -85,7 +85,7 @@ systemctl enable --now mariadb cron
 apache2ctl configtest
 systemctl restart apache2
 APP_DIR="${APP_DIR}" PHP_VERSION="${PHP_VERSION}" bash "${APP_DIR}/deploy/install-isolir-portal.sh"
-php -v | head -1
+php -v | sed -n '1p'
 echo "Mikhmon terpasang di ${APP_DIR}. Buka http://IP-CT/ dan login dengan kredensial yang Anda tetapkan."
 # FreeRADIUS + MySQL RADIUS (opsional — untuk mode RADIUS)
 # apt-get install -y freeradius freeradius-mysql freeradius-utils mysql-server

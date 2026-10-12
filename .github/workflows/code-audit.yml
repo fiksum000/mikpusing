@@ -27,6 +27,7 @@ jobs:
         run: |
           php tests/smoke.php
           python3 tests/callback-http.py
+          python3 tests/billing-concurrency.py
       - name: Check Billing and RADIUS NAS inline JavaScript
         run: |
           python3 - <<'PY'
