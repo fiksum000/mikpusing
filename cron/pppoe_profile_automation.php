@@ -116,16 +116,16 @@ foreach ($data as $sessionName => $sessionData) {
             $customer = $customersByRouterUser[$customerKey] ?? array();
             $comment = (string)($secret['comment'] ?? '');
             $billingDay = isset($customer['due_day']) ? (int)$customer['due_day'] : $today;
-            $isolateDay = $billingDay + 5;
+            $isolateDayOverride = null;
             if (preg_match('/BILLING\s*=\s*(\d{1,2})/i', $comment, $m)) $billingDay = (int)$m[1];
-            if (preg_match('/ISOLIR\s*=\s*(\d{1,2})/i', $comment, $m)) $isolateDay = (int)$m[1];
+            if (preg_match('/ISOLIR\\s*=\\s*(\\d{1,2})/i', $comment, $m)) $isolateDayOverride = (int)$m[1];
             $billingDay = min($daysInMonth, max(1, $billingDay));
-            $isolateDay = min($daysInMonth, max(1, $isolateDay));
+            $isolateDay = $isolateDayOverride === null ? min($daysInMonth, $billingDay + 5) : min($daysInMonth, max(1, $isolateDayOverride));
 
             $package = pppoePackageForProfile($profile);
             if (!$package && !empty($customer['normal_profile'])) $package = pppoePackageForProfile((string)$customer['normal_profile']);
             if (!$package) { $skipped++; continue; }
-            $invoice = billingFindInvoice(billingInvoiceNo($username, $period));
+            $invoice = billingFindInvoice(billingInvoiceNo($username, $period, (string)$sessionName));
             $paid = is_array($invoice) && ($invoice['status'] ?? '') === 'paid';
             $currentBytes = mikhmonQueueBytesForSecret($queues, $secret);
             $usageGb = $currentBytes === null ? null : pppoeMonthlyUsageGb($currentBytes, (string)$sessionName, $username, $period);
