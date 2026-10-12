@@ -228,7 +228,6 @@ tail -n 80 /var/www/mikhmon/storage/radius-accounting.log</pre>
     return String(el('hotspotProfiles').value||'').split(',').map(function(s){return s.trim();}).filter(Boolean).filter(function(s){return /^[A-Za-z0-9_.@ -]{1,64}$/.test(s);});
   }
   function setText(id, text){el(id).textContent=text;}
-  var localIsolirName = <?= is_string($localIsolirProfileJs) ? $localIsolirProfileJs : '"ISOLIR"'; ?>;
   function render(){
     var server=el('radiusServerIp').value.trim(), nas=el('radiusNasIp').value.trim(), portal=el('portalIp').value.trim();
     var secret=el('radiusSharedSecret').value.trim(), hs=profiles();
