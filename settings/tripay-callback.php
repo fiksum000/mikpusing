@@ -53,27 +53,43 @@ if (!isset($payload['total_amount']) || !is_numeric($payload['total_amount']) ||
   tripayCallbackRespond(400, array('success' => false, 'message' => 'Transaction amount does not match invoice plus customer fee'));
 }
 
-if ($status === 'PAID' && strtolower((string)($invoice['status'] ?? '')) !== 'paid') {
-  $updated = billingUpdateInvoice($merchantRef, array(
-    'status' => 'paid',
-    'tripay_reference' => $reference,
-    'paid_at' => !empty($payload['paid_at']) && is_numeric($payload['paid_at']) ? date('Y-m-d H:i:s', (int)$payload['paid_at']) : date('Y-m-d H:i:s')
-  ));
-  if (!$updated) tripayCallbackRespond(500, array('success' => false, 'message' => 'Could not persist paid status; retry callback'));
-  if (!empty($invoice['customer_phone']) && function_exists('fonnteSendMessage')) {
+if ($status === 'PAID') {
+  if (strtolower((string)($invoice['status'] ?? '')) !== 'paid') {
+    $updated = billingUpdateInvoice($merchantRef, array(
+      'status' => 'paid',
+      'tripay_reference' => $reference,
+      'paid_at' => !empty($payload['paid_at']) && is_numeric($payload['paid_at']) ? date('Y-m-d H:i:s', (int)$payload['paid_at']) : date('Y-m-d H:i:s')
+    ));
+    if (!$updated) tripayCallbackRespond(500, array('success' => false, 'message' => 'Could not persist paid status; retry callback'));
+    $invoice = billingFindInvoice($merchantRef);
+    if (!$invoice) tripayCallbackRespond(500, array('success' => false, 'message' => 'Paid invoice could not be reloaded; retry callback'));
+  }
+
+  // Payment callbacks are often retried. Only send once the success timestamp
+  // is persisted; a failed WhatsApp send remains eligible for a later callback.
+  if (!empty($invoice['customer_phone']) && empty($invoice['payment_notification_sent_at']) && function_exists('fonnteSendMessage')) {
     $messageData = array(
       'nama' => (string)($invoice['customer_name'] ?? $invoice['username'] ?? ''),
       'invoice' => $merchantRef,
       'product' => (string)($invoice['product'] ?? 'Paket Internet'),
       'device' => (string)($invoice['device'] ?? $invoice['username'] ?? ''),
       'total' => 'Rp' . number_format((int)$invoice['amount'], 0, ',', '.'),
-      'tanggal_bayar' => date('Y-m-d H:i:s'),
+      'tanggal_bayar' => (string)($invoice['paid_at'] ?? date('Y-m-d H:i:s')),
       'bukti_pembayaran' => !empty($invoice['proof_url']) ? $invoice['proof_url'] : $reference,
       'referensi' => $reference,
       'kontak_admin' => (string)(getenv('MIKHMON_SUPPORT_PHONE') ?: ''),
       'nama_perusahaan' => (string)(getenv('MIKHMON_COMPANY_NAME') ?: 'Administrator Internet')
     );
-    fonnteSendMessage((string)$invoice['customer_phone'], waTemplateRender('payment', $messageData), array('event' => 'payment', 'invoice' => $merchantRef));
+    $sendResult = fonnteSendMessage((string)$invoice['customer_phone'], waTemplateRender('payment', $messageData), array('event' => 'payment', 'invoice' => $merchantRef));
+    if (!empty($sendResult['status'])) {
+      if (!billingUpdateInvoice($merchantRef, array('payment_notification_sent_at' => date('Y-m-d H:i:s')))) {
+        tripayCallbackRespond(500, array('success' => false, 'message' => 'Payment saved but notification status could not be persisted; retry callback'));
+      }
+    } else {
+      tripayCallbackRespond(503, array('success' => false, 'message' => 'Payment saved; WhatsApp notification failed and callback should be retried'));
+    }
+  } elseif (!empty($invoice['customer_phone']) && empty($invoice['payment_notification_sent_at']) && !function_exists('fonnteSendMessage')) {
+    tripayCallbackRespond(503, array('success' => false, 'message' => 'Payment saved; WhatsApp sender is unavailable'));
   }
 } elseif (in_array($status, array('FAILED', 'EXPIRED', 'CANCELED', 'CANCELLED', 'REFUND'), true) && strtolower((string)($invoice['status'] ?? '')) !== 'paid') {
   $mappedStatus = ($status === 'EXPIRED') ? 'expired' : 'failed';
