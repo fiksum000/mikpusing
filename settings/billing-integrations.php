@@ -240,13 +240,16 @@ tail -n 80 /var/www/mikhmon/storage/radius-accounting.log</pre>
     if(validIpv4(portal)){
       setText('routerNoApiIsolirCode',
         ':if ([:len [/ip firewall nat find where comment="MIKPUSING-ISOLIR-HTTP"]] = 0) do={ /ip firewall nat add chain=dstnat src-address-list=MIKPUSING-ISOLIR protocol=tcp dst-port=80 dst-address-type=!local action=dst-nat to-addresses='+portal+' to-ports=8081 place-before=0 comment="MIKPUSING-ISOLIR-HTTP" } else={ /ip firewall nat set [find where comment="MIKPUSING-ISOLIR-HTTP"] chain=dstnat src-address-list=MIKPUSING-ISOLIR protocol=tcp dst-port=80 dst-address-type=!local action=dst-nat to-addresses='+portal+' to-ports=8081 }\n'+
-        ':if ([:len [/ip firewall filter find where comment="MIKPUSING-ISOLIR-PORTAL"]] = 0) do={ /ip firewall filter add chain=forward action=accept src-address-list=MIKPUSING-ISOLIR dst-address='+portal+' protocol=tcp dst-port=8081 place-before=0 comment="MIKPUSING-ISOLIR-PORTAL" } else={ /ip firewall filter set [find where comment="MIKPUSING-ISOLIR-PORTAL"] chain=forward action=accept src-address-list=MIKPUSING-ISOLIR dst-address='+portal+' protocol=tcp dst-port=8081 }'
+        ':if ([:len [/ip firewall filter find where comment="MIKPUSING-ISOLIR-PORTAL"]] = 0) do={ /ip firewall filter add chain=forward action=accept src-address-list=MIKPUSING-ISOLIR dst-address='+portal+' protocol=tcp dst-port=8081 place-before=0 comment="MIKPUSING-ISOLIR-PORTAL" } else={ /ip firewall filter set [find where comment="MIKPUSING-ISOLIR-PORTAL"] chain=forward action=accept src-address-list=MIKPUSING-ISOLIR dst-address='+portal+' protocol=tcp dst-port=8081 }\n'+
+        ':if ([:len [/ip firewall filter find where comment="MIKPUSING-ISOLIR-BLOCK"]] = 0) do={ /ip firewall filter add chain=forward action=drop src-address-list=MIKPUSING-ISOLIR comment="MIKPUSING-ISOLIR-BLOCK" }\n'+
+        '/ip firewall filter move [find where comment="MIKPUSING-ISOLIR-BLOCK"] 0\n'+
+        '/ip firewall filter move [find where comment="MIKPUSING-ISOLIR-PORTAL"] 0'
       );
     } else {
       setText('routerNoApiIsolirCode','# Isi IP LAN CT untuk menghasilkan rule RouterOS tanpa API.');
     }
     if(ipsOk&&safeSecret(secret)){
-      var r=[':if ([:len [/radius find where comment="mikpusing-radius"]] > 0) do={ /radius set [find where comment="mikpusing-radius"] address='+server+' src-address='+nas+' service=ppp,hotspot secret='+secret+' authentication-port=1812 accounting-port=1813 timeout=1s } else={ /radius add address='+server+' src-address='+nas+' service=ppp,hotspot secret='+secret+' authentication-port=1812 accounting-port=1813 timeout=1s comment="mikpusing-radius" }',
+      var r=[':if ([:len [/radius find where comment="MIKPUSING-RADIUS"]] > 0) do={ /radius set [find where comment="MIKPUSING-RADIUS"] address='+server+' src-address='+nas+' service=ppp,hotspot secret='+secret+' authentication-port=1812 accounting-port=1813 timeout=1s } else={ /radius add address='+server+' src-address='+nas+' service=ppp,hotspot secret='+secret+' authentication-port=1812 accounting-port=1813 timeout=1s comment="MIKPUSING-RADIUS" }',
         '/radius incoming set accept=yes port=1700',
         ':if ([:len [/ip firewall filter find where comment="MIKPUSING-RADIUS-DM"]] = 0) do={ /ip firewall filter add chain=input action=accept src-address='+server+' protocol=udp dst-port=1700 place-before=0 comment="MIKPUSING-RADIUS-DM" } else={ /ip firewall filter set [find where comment="MIKPUSING-RADIUS-DM"] chain=input action=accept src-address='+server+' protocol=udp dst-port=1700 }',
         '/ppp aaa set use-radius=yes accounting=yes interim-update=5m'];

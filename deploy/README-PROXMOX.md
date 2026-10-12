@@ -1,3 +1,5 @@
+> **Instalasi Full RADIUS terbaru:** ikuti [INSTALL-FULL-RADIUS.md](INSTALL-FULL-RADIUS.md). Gunakan branch `fix/full-radius-defaults-and-preflight`; halaman luar hanya Admin Settings/Add Router, menu operasional dibuka melalui Open.
+
 # Deployment Mikhmon pada Ubuntu 22.04 LXC/CT Proxmox
 
 ## Rekomendasi CT

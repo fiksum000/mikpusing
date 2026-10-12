@@ -80,9 +80,10 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 10 2 * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/fonnte_log_cleanup.php >> storage/fonnte-cleanup.log 2>&1
 EOF
 chmod 0644 /etc/cron.d/mikhmon
-systemctl enable --now apache2 mariadb cron
+systemctl enable apache2
+systemctl enable --now mariadb cron
 apache2ctl configtest
-systemctl reload apache2
+systemctl restart apache2
 APP_DIR="${APP_DIR}" PHP_VERSION="${PHP_VERSION}" bash "${APP_DIR}/deploy/install-isolir-portal.sh"
 php -v | head -1
 echo "Mikhmon terpasang di ${APP_DIR}. Buka http://IP-CT/ dan login dengan kredensial yang Anda tetapkan."

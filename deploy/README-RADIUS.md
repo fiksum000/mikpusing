@@ -1,3 +1,5 @@
+> **Instalasi Full RADIUS terbaru:** ikuti [INSTALL-FULL-RADIUS.md](INSTALL-FULL-RADIUS.md). Gunakan branch `fix/full-radius-defaults-and-preflight`; halaman luar hanya Admin Settings/Add Router, menu operasional dibuka melalui Open.
+
 # MikroTik RADIUS, Billing, dan Halaman Isolir di Proxmox
 
 Panduan ini menyiapkan Mikhmon + FreeRADIUS + MariaDB untuk pelanggan PPPoE dan Hotspot. Dalam **mode Full RADIUS**, autentikasi, group paket, accounting, perubahan group billing, halaman isolir, dan pemutusan sesi memakai RADIUS Disconnect-Message (DM). Alur setup router dan scheduler billing tidak membutuhkan username/password RouterOS API.
@@ -14,7 +16,7 @@ Panduan ini menyiapkan Mikhmon + FreeRADIUS + MariaDB untuk pelanggan PPPoE dan 
 ~~~bash
 apt update
 apt install -y git
-git clone https://github.com/fiksum000/mikpusing.git /var/www/mikhmon
+git clone --branch fix/full-radius-defaults-and-preflight --single-branch https://github.com/fiksum000/mikpusing.git /var/www/mikhmon
 cd /var/www/mikhmon
 chmod +x deploy/install-ubuntu22.sh
 ./deploy/install-ubuntu22.sh

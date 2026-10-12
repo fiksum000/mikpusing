@@ -1,3 +1,5 @@
+> **Instalasi Full RADIUS terbaru:** ikuti [deploy/INSTALL-FULL-RADIUS.md](deploy/INSTALL-FULL-RADIUS.md). Gunakan branch `fix/full-radius-defaults-and-preflight`; halaman luar hanya Admin Settings/Add Router, menu operasional dibuka melalui Open.
+
 # mikpusing — Mikhmon untuk Proxmox CT/LXC
 
 Repositori source Mikhmon beserta skrip instalasi untuk **Ubuntu Server 22.04 LXC/CT di Proxmox**.
@@ -8,7 +10,7 @@ Jalankan sebagai `root` di CT Ubuntu 22.04 yang memiliki akses internet:
 
 ```bash
 apt update && apt install -y git
-git clone https://github.com/fiksum000/mikpusing.git /var/www/mikhmon
+git clone --branch fix/full-radius-defaults-and-preflight --single-branch https://github.com/fiksum000/mikpusing.git /var/www/mikhmon
 cd /var/www/mikhmon
 chmod +x deploy/install-ubuntu22.sh
 APP_DIR=/var/www/mikhmon ./deploy/install-ubuntu22.sh

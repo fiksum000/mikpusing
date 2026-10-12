@@ -183,7 +183,10 @@ $radiusReady = is_file(getenv('MIKHMON_RADIUS_CONFIG') ?: '/etc/mikhmon/radius.p
     if(validIp(portal)){
       setText('radiusNasPortalCommand',
         ':if ([:len [/ip firewall nat find where comment="MIKPUSING-ISOLIR-HTTP"]] = 0) do={ /ip firewall nat add chain=dstnat src-address-list=MIKPUSING-ISOLIR protocol=tcp dst-port=80 dst-address-type=!local action=dst-nat to-addresses='+portal+' to-ports=8081 place-before=0 comment="MIKPUSING-ISOLIR-HTTP" } else={ /ip firewall nat set [find where comment="MIKPUSING-ISOLIR-HTTP"] chain=dstnat src-address-list=MIKPUSING-ISOLIR protocol=tcp dst-port=80 dst-address-type=!local action=dst-nat to-addresses='+portal+' to-ports=8081 }\n'+
-        ':if ([:len [/ip firewall filter find where comment="MIKPUSING-ISOLIR-PORTAL"]] = 0) do={ /ip firewall filter add chain=forward action=accept src-address-list=MIKPUSING-ISOLIR dst-address='+portal+' protocol=tcp dst-port=8081 place-before=0 comment="MIKPUSING-ISOLIR-PORTAL" } else={ /ip firewall filter set [find where comment="MIKPUSING-ISOLIR-PORTAL"] chain=forward action=accept src-address-list=MIKPUSING-ISOLIR dst-address='+portal+' protocol=tcp dst-port=8081 }'
+        ':if ([:len [/ip firewall filter find where comment="MIKPUSING-ISOLIR-PORTAL"]] = 0) do={ /ip firewall filter add chain=forward action=accept src-address-list=MIKPUSING-ISOLIR dst-address='+portal+' protocol=tcp dst-port=8081 place-before=0 comment="MIKPUSING-ISOLIR-PORTAL" } else={ /ip firewall filter set [find where comment="MIKPUSING-ISOLIR-PORTAL"] chain=forward action=accept src-address-list=MIKPUSING-ISOLIR dst-address='+portal+' protocol=tcp dst-port=8081 }\n'+
+        ':if ([:len [/ip firewall filter find where comment="MIKPUSING-ISOLIR-BLOCK"]] = 0) do={ /ip firewall filter add chain=forward action=drop src-address-list=MIKPUSING-ISOLIR comment="MIKPUSING-ISOLIR-BLOCK" }\n'+
+        '/ip firewall filter move [find where comment="MIKPUSING-ISOLIR-BLOCK"] 0\n'+
+        '/ip firewall filter move [find where comment="MIKPUSING-ISOLIR-PORTAL"] 0'
       );
     } else setText('radiusNasPortalCommand','# Isi IPv4 portal isolir lalu simpan.');
   }
