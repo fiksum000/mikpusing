@@ -18,6 +18,12 @@ require_once __DIR__ . '/../include/billing.php';
 require_once __DIR__ . '/../include/pppoe_packages.php';
 require_once __DIR__ . '/../include/pppoe_usage.php';
 
+// Central FreeRADIUS users are managed in SQL groups, not local /ppp/secret.
+if (strtolower((string)(getenv('MIKHMON_PPP_AUTH_BACKEND') ?: 'routeros')) === 'radius') {
+    require __DIR__ . '/radius_profile_automation.php';
+    exit;
+}
+
 $apply = in_array('--apply', $argv, true);
 $period = date('Y-m');
 $today = (int) date('j');
