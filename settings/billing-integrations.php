@@ -112,7 +112,7 @@ $radiusSecretFromPost = ''; // Never persist shared secrets in the web configura
       <p><a href="./admin.php?id=pppoe-packages" class="group-item group-item-md">Mapping paket PPPoE / Hotspot / FUP / Isolir</a></p>
       <small class="text-muted">Jalur billing Full RADIUS tidak menggunakan RouterOS API. Add Router — RADIUS NAS digunakan untuk menyiapkan MikroTik sebagai client FreeRADIUS; secret tidak disimpan di source code atau pengaturan web.</small>
       <div class="mb-3">
-        <span class="badge <?= $currentBackend === 'radius' ? 'bg-success' : 'bg-info'; ?>">Backend saat ini: <?= strtoupper(htmlspecialchars($currentBackend, ENT_QUOTES, 'UTF-8')); ?></span>
+        <span class="badge <?= $radiusReady ? 'bg-success' : 'bg-warning'; ?>">Mode billing: FULL RADIUS</span>
         <span class="badge <?= $radiusReady ? 'bg-success' : 'bg-warning'; ?>">FreeRADIUS <?= $radiusReady ? 'terkonfigurasi' : 'belum terpasang/konfigurasi'; ?></span>
         <span class="badge <?= $tripayReady ? 'bg-success' : 'bg-warning'; ?>">TriPay <?= $tripayReady ? 'terkonfigurasi' : 'belum terkonfigurasi'; ?></span>
       </div>
