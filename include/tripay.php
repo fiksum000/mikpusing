@@ -11,6 +11,23 @@ if (!function_exists("decrypt")) require_once __DIR__ . '/../lib/decrypt_helper.
     );
   }
   function tripayBaseUrl() { return tripayConfig()['mode'] === 'production' ? 'https://tripay.co.id/api' : 'https://tripay.co.id/api-sandbox'; }
+  function tripayPublicBaseUrl() {
+    $base = trim((string)(getenv('MIKHMON_PUBLIC_BASE_URL') ?: ''));
+    if ($base === '') {
+      $settingsPath = __DIR__ . '/../storage/integration_settings.json';
+      $settings = is_file($settingsPath) ? json_decode(@file_get_contents($settingsPath) ?: '{}', true) : array();
+      if (is_array($settings)) $base = trim((string)($settings['public_base_url'] ?? ''));
+    }
+    if ($base === '' && !empty($_SERVER['HTTP_HOST'])) {
+      $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+      $base = $scheme . '://' . (string)$_SERVER['HTTP_HOST'];
+    }
+    $parts = parse_url($base);
+    if (!is_array($parts) || empty($parts['scheme']) || empty($parts['host']) ||
+        !in_array(strtolower((string)$parts['scheme']), array('http', 'https'), true) ||
+        isset($parts['user']) || isset($parts['pass']) || isset($parts['query']) || isset($parts['fragment'])) return '';
+    return rtrim($base, '/');
+  }
   function tripayRequest($path, $fields = array()) {
     $config = tripayConfig();
     if ($config['api_key'] === '' || $config['private_key'] === '' || $config['merchant_code'] === '') return array('success' => false, 'message' => 'Konfigurasi TriPay belum lengkap.');
@@ -27,8 +44,8 @@ if (!function_exists("decrypt")) require_once __DIR__ . '/../lib/decrypt_helper.
     $config = tripayConfig();
     $merchantRef = $invoice['invoice_no']; $amount = (int)$invoice['amount'];
     $signature = hash_hmac('sha256', $config['merchant_code'] . $merchantRef . $amount, $config['private_key']);
-    if (empty($_SERVER['HTTP_HOST'])) return array('success' => false, 'message' => 'HTTP_HOST tidak tersedia; periksa virtual host.');
-    $base = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'];
+    $base = tripayPublicBaseUrl();
+    if ($base === '') return array('success' => false, 'message' => 'URL publik Mikhmon belum diatur. Isi URL publik/HTTPS di Billing > Integrasi sebelum membuat link pembayaran otomatis.');
     $returnUrl = $base . '/admin.php?id=billing&paid=1';
     $routerSession = trim((string)($invoice['router_session'] ?? ''));
     if ($routerSession !== '' && strtoupper($routerSession) !== 'RADIUS') $returnUrl .= '&session=' . rawurlencode($routerSession);
