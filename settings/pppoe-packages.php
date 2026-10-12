@@ -76,7 +76,7 @@ if (empty($config['packages'])) {
       <button class="group-item group-item-md" type="submit" name="save_packages">Simpan kebijakan</button>
     </form>
     <div class="alert bg-info mt-3">
-      <strong>Otomatisasi:</strong> profil diperiksa setiap 5 menit. Setelah pembayaran dikonfirmasi, sistem mengubah group kembali dan memutus sesi aktif agar login ulang menggunakan kebijakan baru. Untuk redirect halaman isolir, install portal lalu jalankan <code>php deploy/configure-isolir-routeros.php --portal-ip IP_CT --apply</code> di CT setelah router terdaftar di Mikhmon.
+      <strong>Otomatisasi:</strong> profil diperiksa setiap 5 menit. Setelah pembayaran dikonfirmasi, sistem mengubah group kembali dan memutus sesi aktif agar login ulang menggunakan kebijakan baru. Untuk redirect halaman isolir, install portal lalu terapkan aturan firewall/NAT RouterOS secara manual melalui terminal MikroTik sesuai <code>deploy/README-RADIUS.md</code>. Script konfigurasi RouterOS lama sengaja dinonaktifkan agar aplikasi tidak kembali memakai RouterOS API.
     </div>
   </div>
 </div></div></div>
