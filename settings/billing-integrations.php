@@ -52,7 +52,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_integration_sett
   if (!hash_equals($csrf, (string)($_POST['csrf'] ?? ''))) {
     $message = 'Permintaan ditolak karena token keamanan tidak cocok. Muat ulang halaman.'; $messageType = 'danger';
   } else {
-    $backend = strtolower(trim((string)($_POST['ppp_auth_backend'] ?? 'routeros')));
+    // Full RADIUS is the only supported billing backend in this setup.
+    $backend = $radiusReady ? 'radius' : $currentBackend;
     $radiusServerIp = trim((string)($_POST['radius_server_ip'] ?? ''));
     $radiusNasIp = trim((string)($_POST['radius_nas_ip'] ?? ''));
     $portalIp = trim((string)($_POST['portal_ip'] ?? ''));
@@ -61,10 +62,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_integration_sett
     $publicBaseUrl = rtrim(trim((string)($_POST['public_base_url'] ?? '')), '/');
     $defaultPaymentMethod = strtoupper(trim((string)($_POST['default_payment_method'] ?? '')));
     $validPaymentMethods = array('', 'QRIS', 'DANA', 'OVO', 'SHOPEEPAY', 'BCAVA', 'BRIVA', 'MANDIRIVA', 'ALFAMART', 'INDOMARET');
-    if (!in_array($backend, array('routeros','radius'), true)) {
-      $message = 'Pilih backend RouterOS lokal atau FreeRADIUS.'; $messageType = 'danger';
-    } elseif (!billingIntegrationValidIpv4($radiusServerIp) || !billingIntegrationValidIpv4($radiusNasIp) || !billingIntegrationValidIpv4($portalIp)) {
-      $message = 'Alamat IP harus IPv4 yang valid. Kosongkan jika belum diketahui.'; $messageType = 'danger';
+    if (!billingIntegrationValidIpv4($radiusServerIp) || !billingIntegrationValidIpv4($radiusNasIp) || !billingIntegrationValidIpv4($portalIp)) {
+      $message = 'Alamat IP harus IPv4 yang valid.'; $messageType = 'danger';
+    } elseif ($radiusServerIp === '' || $radiusNasIp === '' || $portalIp === '') {
+      $message = 'Isi IP server RADIUS/CT, IP sumber NAS MikroTik, dan IP portal isolir.'; $messageType = 'danger';
     } elseif ($backend === 'radius' && ($radiusServerIp === '' || $radiusNasIp === '')) {
       $message = 'Mode RADIUS memerlukan IP LAN CT dan IP sumber MikroTik (NAS).'; $messageType = 'danger';
     } elseif ($backend === 'radius' && !$radiusReady) {
@@ -118,11 +119,9 @@ $radiusSecretFromPost = ''; // Never persist shared secrets in the web configura
       <form method="post" action="./admin.php?id=billing-integrations" class="mb-4">
         <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8'); ?>"/>
         <div class="row">
-          <div class="col-md-4 mb-3"><label>Backend autentikasi</label>
-            <select class="form-control" name="ppp_auth_backend" id="backendSelect">
-              <option value="routeros" <?= $currentBackend === 'routeros' ? 'selected' : ''; ?>>MikroTik lokal (PPPoE saja)</option>
-              <option value="radius" <?= $currentBackend === 'radius' ? 'selected' : ''; ?> <?= !$radiusReady ? 'disabled' : ''; ?>>FreeRADIUS + MariaDB (PPPoE/Hotspot)</option>
-            </select>
+          <div class="col-md-4 mb-3"><label>Mode autentikasi</label>
+            <div class="form-control" style="height:auto;">Full RADIUS — PPPoE / Hotspot</div>
+            <small class="text-muted">Mode ini dipakai otomatis setelah NAS dan FreeRADIUS terdaftar. Tidak ada pengaturan RouterOS API di sini.</small>
           </div>
           <div class="col-md-4 mb-3"><label>IP LAN CT Mikhmon / RADIUS</label>
             <input class="form-control" id="radiusServerIp" name="radius_server_ip" inputmode="decimal" placeholder="contoh 192.168.88.10" value="<?= htmlspecialchars((string)$settings['radius_server_ip'], ENT_QUOTES, 'UTF-8'); ?>"/>
