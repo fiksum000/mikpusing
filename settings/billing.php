@@ -74,7 +74,7 @@ if (isset($_POST['create_tripay'])) {
           $billingType = 'danger';
         } elseif (!billingUpdateInvoice($invoice['invoice_no'], array(
           'payment_method' => $invoice['payment_method'], 'tripay_reference' => $reference,
-          'payment_url' => $checkout, 'status' => 'pending', 'payment_notification_sent_at' => ''
+          'payment_url' => $checkout, 'status' => 'pending', 'invoice_notification_sent_at' => ''
         ))) {
           $billingMessage = 'Transaksi TriPay dibuat, tetapi data referensi gagal disimpan. Jangan buat transaksi baru; periksa dashboard TriPay dan invoice ini.';
           $billingType = 'danger';
@@ -89,7 +89,7 @@ if (isset($_POST['create_tripay'])) {
             'link_bayar' => $checkout
           ));
           $sendResult = fonnteSendMessage($invoice['customer_phone'], $message, array('event' => 'invoice', 'invoice' => $invoice['invoice_no']));
-          if (!empty($sendResult['status'])) billingUpdateInvoice($invoice['invoice_no'], array('payment_notification_sent_at' => date('Y-m-d H:i:s')));
+          if (!empty($sendResult['status'])) billingUpdateInvoice($invoice['invoice_no'], array('invoice_notification_sent_at' => date('Y-m-d H:i:s')));
         }
         $billingMessage = 'Transaksi TriPay berhasil dibuat. Reference: ' . htmlspecialchars($reference, ENT_QUOTES, 'UTF-8');
         $billingType = 'success';
