@@ -145,7 +145,7 @@ $radiusReady = is_file(getenv('MIKHMON_RADIUS_CONFIG') ?: '/etc/mikhmon/radius.p
   function el(id){return document.getElementById(id);}
   function validIp(s){
     var p=String(s||'').trim().split('.');
-    return p.length===4 && p.every(function(v){return /^\\d{1,3}$/.test(v) && Number(v)>=0 && Number(v)<=255;});
+    return p.length===4 && p.every(function(v){return /^\d{1,3}$/.test(v) && Number(v)>=0 && Number(v)<=255;});
   }
   function safeSecret(s){return /^[A-Za-z0-9._-]{24,128}$/.test(s);}
   function profiles(){return String(document.querySelector('[name="hotspot_profiles"]').value||'').split(',').map(function(v){return v.trim();}).filter(function(v){return /^[A-Za-z0-9_.@ -]{1,64}$/.test(v);});}
