@@ -1,8 +1,9 @@
 <?php
 /**
- * PPPoE monthly usage accounting based on MikroTik Simple Queue counters.
- * For accurate per-subscriber FUP, define a queue named after the PPP user,
- * set the queue comment to the PPP username, or target its static remote-address.
+ * Legacy Simple Queue counter helpers retained for compatibility/tests only.
+ * Full RADIUS production usage is read from FreeRADIUS radacct via
+ * RadiusClient::sampleAccountingCounters() and getUsage(); do not call the
+ * RouterOS queue helper for billing/FUP in Full RADIUS mode.
  */
 if (!function_exists('pppoeUsagePath')) {
   function pppoeUsagePath() { return __DIR__ . '/../storage/pppoe_usage.json'; }
