@@ -7,7 +7,13 @@
 if (PHP_SAPI !== 'cli') { http_response_code(403); exit("CLI only\n"); }
 require_once __DIR__ . '/../include/config.php';
 require_once __DIR__ . '/../lib/free_radius_client.php';
-require_once __DIR__ . '/../lib/routeros_session_control.php';
+$radiusConfig = mikhmonRadiusConfig();
+$radiusDisconnectMode = strtolower((string)($radiusConfig['disconnect_mode'] ?? 'routeros-api'));
+if ($radiusDisconnectMode === 'radius-dm') {
+    require_once __DIR__ . '/../lib/radius_disconnect_client.php';
+} else {
+    require_once __DIR__ . '/../lib/routeros_session_control.php';
+}
 require_once __DIR__ . '/../include/customers.php';
 require_once __DIR__ . '/../include/billing.php';
 require_once __DIR__ . '/../include/pppoe_packages.php';
@@ -45,9 +51,15 @@ if (is_file($pendingPath)) {
     $storedPending = json_decode(@file_get_contents($pendingPath) ?: '{}', true);
     if (is_array($storedPending)) $pending = $storedPending;
 }
-$routerSessionController = new MikhmonRouterSessionController(isset($data) && is_array($data) ? $data : array());
+$routerSessionController = null;
+$radiusDisconnectController = null;
 try {
     $radius = new RadiusClient();
+    if ($radiusDisconnectMode === 'radius-dm') {
+        $radiusDisconnectController = new MikhmonRadiusDisconnectClient($radius, $radiusConfig);
+    } else {
+        $routerSessionController = new MikhmonRouterSessionController(isset($data) && is_array($data) ? $data : array());
+    }
     $users = $radius->listUsers();
     // Persist each RADIUS subscriber's last known normal group before any isolation
     // transition; this is how the system can restore the right package after payment.
@@ -122,16 +134,27 @@ try {
     // list queries per router, rather than two list queries for every subscriber.
     if ($apply && count($pending) > 0) {
         $toKick = array_values(array_unique(array_merge(array_keys($pending), array_keys($kickRequested))));
-        $kickResults = $routerSessionController->disconnectSubscribers($toKick);
+        $kickResults = $radiusDisconnectController
+            ? $radiusDisconnectController->disconnectSubscribers($toKick)
+            : $routerSessionController->disconnectSubscribers($toKick);
         foreach ($toKick as $pendingUser) {
             $kicked = $kickResults[$pendingUser] ?? array('routers_checked' => 0, 'ppp' => 0, 'hotspot' => 0, 'errors' => 1, 'router_errors' => array('unknown' => 'missing_kick_result'));
             if ($kicked['routers_checked'] > 0 && $kicked['errors'] === 0 && count($kicked['router_errors']) === 0) {
                 unset($pending[$pendingUser]);
                 $label = isset($kickRequested[$pendingUser]) ? 'APPLIED' : 'RECOVERED';
-                $log("{$label} backend=radius user={$pendingUser} sessions_kicked_ppp={$kicked['ppp']} sessions_kicked_hotspot={$kicked['hotspot']} routers_checked={$kicked['routers_checked']}");
+                if ($radiusDisconnectController) {
+                    $log("{$label} backend=radius-dm user={$pendingUser} sessions_disconnected={$kicked['sessions']} no_active_sessions=" . (!empty($kicked['no_active_sessions']) ? 'yes' : 'no'));
+                } else {
+                    $log("{$label} backend=radius-api user={$pendingUser} sessions_kicked_ppp={$kicked['ppp']} sessions_kicked_hotspot={$kicked['hotspot']} routers_checked={$kicked['routers_checked']}");
+                }
             } else {
                 if (!isset($pending[$pendingUser])) $pending[$pendingUser] = array('target' => '', 'requested_at' => date('c'));
-                $log("WARN backend=radius user={$pendingUser} session_kick_pending routers_checked={$kicked['routers_checked']} errors={$kicked['errors']} offline_routers=" . count($kicked['router_errors']) . "; retrying on next five-minute run");
+                if ($radiusDisconnectController) {
+                    $details = implode('; ', array_values($kicked['router_errors']));
+                    $log("WARN backend=radius-dm user={$pendingUser} session_disconnect_pending errors={$kicked['errors']} details=" . preg_replace('/\s+/', ' ', $details) . "; retrying on next five-minute run");
+                } else {
+                    $log("WARN backend=radius-api user={$pendingUser} session_kick_pending routers_checked={$kicked['routers_checked']} errors={$kicked['errors']} offline_routers=" . count($kicked['router_errors']) . "; retrying on next five-minute run");
+                }
             }
         }
         $pendingJson = json_encode($pending, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
@@ -141,7 +164,7 @@ try {
         }
     }
     $radius->disconnect();
-    $routerSessionController->closeAll();
+    if ($routerSessionController instanceof MikhmonRouterSessionController) $routerSessionController->closeAll();
 } catch (Throwable $e) {
     if ($radius instanceof RadiusClient) $radius->disconnect();
     fwrite(STDERR, date('c') . ' RADIUS automation FAILED: ' . preg_replace('/\s+/', ' ', $e->getMessage()) . PHP_EOL);
