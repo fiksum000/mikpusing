@@ -9,6 +9,7 @@
  * static remote-address.
  */
 if (PHP_SAPI !== 'cli') { http_response_code(403); exit("CLI only\n"); }
+date_default_timezone_set(getenv('TZ') ?: 'Asia/Jakarta');
 
 require_once __DIR__ . '/../lib/routeros_api.class.php';
 require_once __DIR__ . '/../include/config.php';
@@ -116,12 +117,8 @@ foreach ($data as $sessionName => $sessionData) {
             $customerKey = (string)$sessionName . '|' . $username;
             $customer = $customersByRouterUser[$customerKey] ?? array();
             $comment = (string)($secret['comment'] ?? '');
-            $billingDay = isset($customer['due_day']) ? (int)$customer['due_day'] : 20;
             $isolateDayOverride = null;
-            if (preg_match('/BILLING\s*=\s*(\d{1,2})/i', $comment, $m)) $billingDay = (int)$m[1];
             if (preg_match('/ISOLIR\\s*=\\s*(\\d{1,2})/i', $comment, $m)) $isolateDayOverride = (int)$m[1];
-            $billingDay = min($daysInMonth, max(1, $billingDay));
-            $isolateDay = $isolateDayOverride === null ? min($daysInMonth, $billingDay + 5) : min($daysInMonth, max(1, $isolateDayOverride));
 
             $package = pppoePackageForProfile($profile);
             if (!$package && !empty($customer['normal_profile'])) $package = pppoePackageForProfile((string)$customer['normal_profile']);
@@ -134,6 +131,14 @@ foreach ($data as $sessionName => $sessionData) {
                 continue;
             }
             $paid = ($invoice['status'] ?? '') === 'paid';
+            $dueTimestamp = !empty($invoice['due_date']) ? strtotime((string)$invoice['due_date'] . ' 00:00:00') : false;
+            $isolateTimestamp = $dueTimestamp === false ? false : strtotime('+5 days', $dueTimestamp);
+            if ($isolateDayOverride !== null) {
+                $overrideDay = min($daysInMonth, max(1, $isolateDayOverride));
+                $isolateTimestamp = strtotime(sprintf('%s-%02d 00:00:00', $period, $overrideDay));
+            }
+            $pastGrace = $isolateTimestamp !== false && time() >= $isolateTimestamp;
+            if ($isolateTimestamp === false) mikhmonLogAutomation("WARN router={$sessionName} user={$username} invoice_due_date_invalid; isolation disabled for safety");
             $currentBytes = mikhmonQueueBytesForSecret($queues, $secret);
             $usageGb = $currentBytes === null ? null : pppoeMonthlyUsageGb($currentBytes, (string)$sessionName, $username, $period);
 
@@ -143,11 +148,11 @@ foreach ($data as $sessionName => $sessionData) {
             $target = $profile;
             if ($paid && $normalProfile !== '') {
                 $target = $normalProfile;
-            } elseif (!$paid && $today >= $isolateDay && $isolirProfile !== '') {
+            } elseif (!$paid && $pastGrace && $isolirProfile !== '') {
                 $target = $isolirProfile;
             } elseif (!$paid && $fupProfile !== '' && $quotaGb > 0 && $usageGb !== null && $usageGb >= $quotaGb) {
                 $target = $fupProfile;
-            } elseif (($profile === $isolirProfile || ($fupProfile !== '' && $profile === $fupProfile)) && $normalProfile !== '') {
+            } elseif (!$paid && $fupProfile !== '' && $profile === $fupProfile && $normalProfile !== '' && ($quotaGb <= 0 || ($usageGb !== null && $usageGb < $quotaGb))) {
                 $target = $normalProfile;
             }
 
