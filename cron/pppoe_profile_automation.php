@@ -126,7 +126,13 @@ foreach ($data as $sessionName => $sessionData) {
             if (!$package && !empty($customer['normal_profile'])) $package = pppoePackageForProfile((string)$customer['normal_profile']);
             if (!$package) { $skipped++; continue; }
             $invoice = billingFindInvoice(billingInvoiceNo($username, $period, (string)$sessionName));
-            $paid = is_array($invoice) && ($invoice['status'] ?? '') === 'paid';
+            // Missing invoice is not interpreted as unpaid: prevent mass isolation if billing was not generated.
+            if (!is_array($invoice)) {
+                $skipped++;
+                mikhmonLogAutomation("WARN router={$sessionName} user={$username} invoice_missing; profile unchanged");
+                continue;
+            }
+            $paid = ($invoice['status'] ?? '') === 'paid';
             $currentBytes = mikhmonQueueBytesForSecret($queues, $secret);
             $usageGb = $currentBytes === null ? null : pppoeMonthlyUsageGb($currentBytes, (string)$sessionName, $username, $period);
 
