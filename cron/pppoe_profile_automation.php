@@ -34,7 +34,7 @@ require_once __DIR__ . '/../lib/routeros_session_control.php';
 
 // Central FreeRADIUS users are managed in SQL groups, not local /ppp/secret.
 $radiusConfig = mikhmonRadiusConfig();
-$authBackend = strtolower((string)(getenv('MIKHMON_PPP_AUTH_BACKEND') ?: ($radiusConfig['ppp_auth_backend'] ?? 'routeros')));
+$authBackend = strtolower((string)(getenv('MIKHMON_PPP_AUTH_BACKEND') ?: ($radiusConfig['ppp_auth_backend'] ?? 'radius')));
 if ($authBackend === 'radius') {
     require __DIR__ . '/radius_profile_automation.php';
     exit;
