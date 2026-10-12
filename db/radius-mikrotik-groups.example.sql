@@ -20,3 +20,9 @@ WHERE NOT EXISTS (SELECT 1 FROM radgroupreply WHERE groupname='HOTSPOT-5M' AND a
 INSERT INTO radgroupreply (groupname, attribute, op, value)
 SELECT 'HOTSPOT-10M', 'Mikrotik-Rate-Limit', ':=', '10M/10M'
 WHERE NOT EXISTS (SELECT 1 FROM radgroupreply WHERE groupname='HOTSPOT-10M' AND attribute='Mikrotik-Rate-Limit');
+
+-- While this group is assigned, RouterOS adds the subscriber's active address
+-- to this firewall list. A dst-nat rule can then show /isolir/index.php for HTTP.
+INSERT INTO radgroupreply (groupname, attribute, op, value)
+SELECT 'ISOLIR', 'Mikrotik-Address-List', ':=', 'MIKPUSING-ISOLIR'
+WHERE NOT EXISTS (SELECT 1 FROM radgroupreply WHERE groupname='ISOLIR' AND attribute='Mikrotik-Address-List');
