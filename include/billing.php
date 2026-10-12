@@ -120,6 +120,30 @@ if (!function_exists('billingPath')) {
     $date = DateTimeImmutable::createFromFormat('!Y-m-d', $period . '-01');
     return $date && $date->format('Y-m') === $period;
   }
+  /**
+   * True only for a positive-value, unpaid invoice whose due date plus grace
+   * period has elapsed. Invalid due dates never trigger isolation.
+   */
+  function billingInvoiceIsPastGracePeriod($invoice, $now = null, $graceDays = 5) {
+    if (!is_array($invoice)) return false;
+    if (strtolower(trim((string)($invoice['status'] ?? 'unpaid'))) === 'paid') return false;
+    if ((int)($invoice['amount'] ?? 0) <= 0) return false;
+    $dueDate = trim((string)($invoice['due_date'] ?? ''));
+    if ($dueDate === '' || !preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $dueDate)) return false;
+    $dueTimestamp = strtotime($dueDate . ' 00:00:00');
+    if ($dueTimestamp === false || date('Y-m-d', $dueTimestamp) !== $dueDate) return false;
+    $graceDays = max(0, (int)$graceDays);
+    $isolationTimestamp = strtotime('+' . $graceDays . ' days', $dueTimestamp);
+    if ($isolationTimestamp === false) return false;
+    return ($now === null ? time() : (int)$now) >= $isolationTimestamp;
+  }
+  function billingCustomerHasPastDueInvoice($invoices, $now = null, $graceDays = 5) {
+    foreach ((array)$invoices as $invoice) {
+      if (billingInvoiceIsPastGracePeriod($invoice, $now, $graceDays)) return true;
+    }
+    return false;
+  }
+
   /** Stable invoice identifier; router session separates duplicate usernames. */
   function billingInvoiceNo($customer, $period, $routerSession = '') {
     if (!billingValidPeriod($period)) throw new InvalidArgumentException('Periode invoice harus berformat YYYY-MM.');
