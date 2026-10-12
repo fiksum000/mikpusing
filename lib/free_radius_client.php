@@ -1,4 +1,15 @@
 <?php
+if (!function_exists('mikhmonRadiusConfig')) {
+  function mikhmonRadiusConfig() {
+    static $loaded = null;
+    if ($loaded !== null) return $loaded;
+    $path = getenv('MIKHMON_RADIUS_CONFIG') ?: '/etc/mikhmon/radius.php';
+    $value = (is_file($path) && is_readable($path)) ? require $path : array();
+    $loaded = is_array($value) ? $value : array();
+    return $loaded;
+  }
+}
+
 /**
  * FreeRADIUS SQL client for the optional central-authentication backend.
  * Configure MIKHMON_RADIUS_DB_HOST/USER/PASSWORD/NAME through the service
@@ -9,11 +20,12 @@ class RadiusClient {
   private $dbName;
 
   public function __construct($host = null, $user = null, $pass = null, $db = null) {
-    $host = $host !== null ? $host : (getenv('MIKHMON_RADIUS_DB_HOST') ?: '127.0.0.1');
-    $user = $user !== null ? $user : (getenv('MIKHMON_RADIUS_DB_USER') ?: 'radius');
-    $pass = $pass !== null ? $pass : (getenv('MIKHMON_RADIUS_DB_PASSWORD') ?: '');
-    $db = $db !== null ? $db : (getenv('MIKHMON_RADIUS_DB_NAME') ?: 'radius');
-    if ($pass === '') throw new RuntimeException('MIKHMON_RADIUS_DB_PASSWORD belum diatur.');
+    $fileConfig = mikhmonRadiusConfig();
+    $host = $host !== null ? $host : (getenv('MIKHMON_RADIUS_DB_HOST') ?: ($fileConfig['db_host'] ?? '127.0.0.1'));
+    $user = $user !== null ? $user : (getenv('MIKHMON_RADIUS_DB_USER') ?: ($fileConfig['db_user'] ?? 'radius'));
+    $pass = $pass !== null ? $pass : (getenv('MIKHMON_RADIUS_DB_PASSWORD') ?: ($fileConfig['db_password'] ?? ''));
+    $db = $db !== null ? $db : (getenv('MIKHMON_RADIUS_DB_NAME') ?: ($fileConfig['db_name'] ?? 'radius'));
+    if ($pass === '') throw new RuntimeException('Password database RADIUS belum diatur di /etc/mikhmon/radius.php atau environment.');
     if (!class_exists('mysqli')) throw new RuntimeException('Ekstensi PHP mysqli belum aktif.');
     mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
     $this->db = new mysqli($host, $user, $pass, $db);
@@ -32,6 +44,15 @@ class RadiusClient {
     $result = $this->db->query($sql);
     $rows = array();
     while ($row = $result->fetch_assoc()) $rows[] = $row;
+    $result->free();
+    return $rows;
+  }
+
+  /** Return group names which have RADIUS reply attributes configured. */
+  public function listGroups() {
+    $result = $this->db->query("SELECT DISTINCT groupname FROM radgroupreply WHERE groupname <> '' ORDER BY groupname");
+    $rows = array();
+    while ($row = $result->fetch_assoc()) $rows[] = (string)$row['groupname'];
     $result->free();
     return $rows;
   }
