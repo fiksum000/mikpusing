@@ -10,16 +10,18 @@
  */
 if (PHP_SAPI !== 'cli') { http_response_code(403); exit("CLI only\n"); }
 
-require_once __DIR__ . '/../lib/decrypt_helper.php';
 require_once __DIR__ . '/../lib/routeros_api.class.php';
 require_once __DIR__ . '/../include/config.php';
 require_once __DIR__ . '/../include/customers.php';
 require_once __DIR__ . '/../include/billing.php';
 require_once __DIR__ . '/../include/pppoe_packages.php';
 require_once __DIR__ . '/../include/pppoe_usage.php';
+require_once __DIR__ . '/../lib/free_radius_client.php';
 
 // Central FreeRADIUS users are managed in SQL groups, not local /ppp/secret.
-if (strtolower((string)(getenv('MIKHMON_PPP_AUTH_BACKEND') ?: 'routeros')) === 'radius') {
+$radiusConfig = mikhmonRadiusConfig();
+$authBackend = strtolower((string)(getenv('MIKHMON_PPP_AUTH_BACKEND') ?: ($radiusConfig['ppp_auth_backend'] ?? 'routeros')));
+if ($authBackend === 'radius') {
     require __DIR__ . '/radius_profile_automation.php';
     exit;
 }
