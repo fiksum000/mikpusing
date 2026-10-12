@@ -56,8 +56,47 @@ if (!function_exists('customerPath')) {
     return customerWriteAll($rows);
   }
   function customerSyncSecrets($secrets, $routerSession = '') {
-    foreach ((array)$secrets as $secret) customerUpsertFromSecret($secret, $routerSession);
-    return array_values(array_filter(customerReadAll(), function($row) use ($routerSession) {
+    // Batch upsert: one read and one write per router, not one disk write per subscriber.
+    $rows = customerReadAll();
+    $index = array();
+    foreach ($rows as $i => $row) {
+      $key = (string)($row['router_session'] ?? '') . '|' . (string)($row['username'] ?? '');
+      $index[$key] = $i;
+    }
+    $now = date('Y-m-d H:i:s');
+    $changed = false;
+    foreach ((array)$secrets as $secret) {
+      if (empty($secret['name'])) continue;
+      $username = (string)$secret['name'];
+      $key = (string)$routerSession . '|' . $username;
+      $comment = (string)($secret['comment'] ?? '');
+      $profile = (string)($secret['profile'] ?? '');
+      $status = (($secret['disabled'] ?? '') === 'true') ? 'disabled' : 'active';
+      if (isset($index[$key])) {
+        $i = $index[$key];
+        $rows[$i]['router_session'] = (string)$routerSession;
+        $rows[$i]['mikrotik_comment'] = $comment;
+        if ($profile !== '' && strtoupper($profile) !== 'ISOLIR') {
+          $rows[$i]['profile'] = $profile;
+          $rows[$i]['normal_profile'] = $profile;
+        }
+        $rows[$i]['status'] = $status;
+        $rows[$i]['last_sync'] = $now;
+      } else {
+        $index[$key] = count($rows);
+        $rows[] = array(
+          'username' => $username,
+          'name' => $comment !== '' ? $comment : $username,
+          'phone' => '', 'email' => '', 'amount' => 0, 'due_day' => 20,
+          'router_session' => (string)$routerSession,
+          'profile' => $profile, 'normal_profile' => $profile,
+          'status' => $status, 'mikrotik_comment' => $comment, 'last_sync' => $now
+        );
+      }
+      $changed = true;
+    }
+    if ($changed && !customerWriteAll($rows)) throw new RuntimeException('Gagal menyimpan sinkronisasi pelanggan.');
+    return array_values(array_filter($rows, function($row) use ($routerSession) {
       return (string)($row['router_session'] ?? '') === (string)$routerSession;
     }));
   }
