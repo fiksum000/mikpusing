@@ -60,8 +60,12 @@ if (!function_exists('billingPath')) {
       $legacyInvoiceNo = billingLegacyInvoiceNo($username, $period);
       if (isset($existing[$invoiceNo])) continue;
       if ($legacyInvoiceNo !== '' && isset($existing[$legacyInvoiceNo])) {
-        $legacySession = (string)($existing[$legacyInvoiceNo]['router_session'] ?? '');
-        if ($legacySession === $routerSession) continue;
+        $legacyInvoice = $existing[$legacyInvoiceNo];
+        $legacyUsername = (string)($legacyInvoice['username'] ?? '');
+        $legacySession = (string)($legacyInvoice['router_session'] ?? '');
+        // Only suppress generation when the old invoice belongs to this exact subscriber.
+        // Shared 12-character prefixes must never cause another customer's bill to disappear.
+        if ($legacyUsername === $username && $legacySession === $routerSession) continue;
       }
       $amount = isset($customer['amount']) && (int)$customer['amount'] > 0 ? (int)$customer['amount'] : (int)$defaultAmount;
       // Never create a zero-value invoice that could accidentally trigger isolation.
