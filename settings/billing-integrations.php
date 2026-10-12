@@ -179,7 +179,7 @@ $radiusSecretFromPost = ''; // Never persist shared secrets in the web configura
     var secret=el('radiusSharedSecret').value.trim(), hs=profiles();
     var ipsOk=validIpv4(server)&&validIpv4(nas);
     if(ipsOk){
-      setText('ctInstallCode','cd /var/www/mikhmon && git pull --ff-only && APP_DIR=/var/www/mikhmon RADIUS_NAS_IP='+nas+' RADIUS_SERVER_IP='+server+' bash deploy/install-freeradius.sh');
+      setText('ctInstallCode','cd /var/www/mikhmon && git pull --ff-only && if [ -f /etc/mikhmon/radius.php ]; then echo "RADIUS sudah terkonfigurasi; installer tidak dijalankan ulang agar secret tidak berubah."; systemctl status freeradius --no-pager; else APP_DIR=/var/www/mikhmon RADIUS_NAS_IP='+nas+' RADIUS_SERVER_IP='+server+' bash deploy/install-freeradius.sh; fi');
     } else {
       setText('ctInstallCode','# Isi IP LAN CT dan IP sumber MikroTik, lalu simpan pengaturan.\n# IP CT dan IP NAS harus berupa IPv4 yang benar.');
     }
@@ -193,8 +193,8 @@ $radiusSecretFromPost = ''; // Never persist shared secrets in the web configura
       setText('routerLocalCode','# Isi IP LAN CT untuk portal dan simpan pengaturan.');
     }
     if(ipsOk&&safeSecret(secret)){
-      var r=[':foreach i in=[/radius find where comment="mikpusing-radius"] do={ /radius remove $i }',
-        '/radius add address='+server+' service=ppp,hotspot secret='+secret+' authentication-port=1812 accounting-port=1813 timeout=1s comment="mikpusing-radius"',
+      var r=[':local existingRadius [/radius find where comment="mikpusing-radius"]',
+        ':if ([:len $existingRadius] > 0) do={ /radius set $existingRadius address='+server+' src-address='+nas+' service=ppp,hotspot secret='+secret+' authentication-port=1812 accounting-port=1813 timeout=1s } else={ /radius add address='+server+' src-address='+nas+' service=ppp,hotspot secret='+secret+' authentication-port=1812 accounting-port=1813 timeout=1s comment="mikpusing-radius" }',
         '/ppp aaa set use-radius=yes accounting=yes interim-update=5m'];
       if(hs.length){
         hs.forEach(function(p){r.push('/ip hotspot profile set [find where name="'+p+'"] use-radius=yes radius-accounting=yes radius-interim-update=5m');});
