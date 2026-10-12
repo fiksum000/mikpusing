@@ -207,15 +207,14 @@ tail -n 80 /var/www/mikhmon/storage/radius-accounting.log</pre>
     if(validIpv4(portal)){
       setText('isolirDryCode','cd /var/www/mikhmon && php deploy/configure-isolir-routeros.php --portal-ip '+portal);
       setText('isolirApplyCode','cd /var/www/mikhmon && php deploy/configure-isolir-routeros.php --portal-ip '+portal+' --apply');
-      setText('routerLocalCode',':local isolirProfile [/ppp profile find where name="ISOLIR"]\n:if ([:len $isolirProfile] = 0) do={ /ppp profile add name="ISOLIR" rate-limit=64k/64k address-list=MIKPUSING-ISOLIR } else={ /ppp profile set $isolirProfile rate-limit=64k/64k address-list=MIKPUSING-ISOLIR }\n# Setelah rule diverifikasi, pasang redirect HTTP di CT dengan perintah apply isolir di atas.');
+      setText('routerLocalCode',':if ([:len [/ppp profile find where name="ISOLIR"]] = 0) do={ /ppp profile add name="ISOLIR" rate-limit=64k/64k address-list=MIKPUSING-ISOLIR } else={ /ppp profile set [find where name="ISOLIR"] rate-limit=64k/64k address-list=MIKPUSING-ISOLIR }\n# Setelah rule diverifikasi, pasang redirect HTTP di CT dengan perintah apply isolir di atas.');
     } else {
       setText('isolirDryCode','# Isi IP LAN CT untuk halaman isolir.');
       setText('isolirApplyCode','# Isi IP LAN CT untuk halaman isolir.');
       setText('routerLocalCode','# Isi IP LAN CT untuk portal dan simpan pengaturan.');
     }
     if(ipsOk&&safeSecret(secret)){
-      var r=[':local existingRadius [/radius find where comment="mikpusing-radius"]',
-        ':if ([:len $existingRadius] > 0) do={ /radius set $existingRadius address='+server+' src-address='+nas+' service=ppp,hotspot secret='+secret+' authentication-port=1812 accounting-port=1813 timeout=1s } else={ /radius add address='+server+' src-address='+nas+' service=ppp,hotspot secret='+secret+' authentication-port=1812 accounting-port=1813 timeout=1s comment="mikpusing-radius" }',
+      var r=[':if ([:len [/radius find where comment="mikpusing-radius"]] > 0) do={ /radius set [find where comment="mikpusing-radius"] address='+server+' src-address='+nas+' service=ppp,hotspot secret='+secret+' authentication-port=1812 accounting-port=1813 timeout=1s } else={ /radius add address='+server+' src-address='+nas+' service=ppp,hotspot secret='+secret+' authentication-port=1812 accounting-port=1813 timeout=1s comment="mikpusing-radius" }',
         '/ppp aaa set use-radius=yes accounting=yes interim-update=5m'];
       if(hs.length){
         hs.forEach(function(p){r.push('/ip hotspot profile set [find where name="'+p+'"] use-radius=yes radius-accounting=yes radius-interim-update=5m');});
