@@ -46,6 +46,8 @@ php deploy/configure-isolir-routeros.php --portal-ip IP_LAN_CT --apply
 
 Profil diperiksa setiap 5 menit. Pemulihan setelah pembayaran terkonfirmasi ditargetkan jauh di bawah 20 menit selama callback diterima, FreeRADIUS aktif, serta RouterOS API dapat dijangkau. Redirect halaman berlaku untuk HTTP; HTTPS tidak dapat dialihkan transparan ke halaman HTTP tanpa error TLS. Untuk pelanggan PPPoE dan Hotspot, tambahkan seluruh group normal/FUP dalam menu `Profile PPPoE & FUP`.
 
+Di panel Mikhmon, buka **Billing & TriPay → Integrasi Billing / MikroTik / RADIUS** untuk memilih backend, menyimpan IP LAN, dan menyalin perintah setup. Halaman itu menghasilkan perintah untuk CT Proxmox, konfigurasi RADIUS di RouterOS, serta dry-run dan apply rule portal isolir. Shared secret RADIUS sengaja tidak disimpan di web; ambil dari file privat `/root/mikpusing-radius-credentials.txt` pada CT, masukkan ke kolom secret, lalu salin perintah yang dihasilkan. Jalankan dry-run dulu dan uji satu router sebelum menerapkan produksi.
+
 ## Keamanan
 
 - `include/config.php` adalah konfigurasi runtime dan sengaja **tidak disimpan di Git**. Installer membuatnya dengan password admin acak pada CT baru.
