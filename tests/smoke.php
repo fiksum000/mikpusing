@@ -46,6 +46,19 @@ try {
     $invalidPeriodRejected = true;
 }
 assertMikpusing($invalidPeriodRejected, 'invalid invoice month is rejected');
+assertMikpusing(!billingInvoiceIsPastGracePeriod(array('status' => 'unpaid', 'amount' => 25000, 'due_date' => '2026-10-20'), strtotime('2026-10-24 23:59:59')), 'unpaid invoice remains active before grace period ends');
+assertMikpusing(billingInvoiceIsPastGracePeriod(array('status' => 'unpaid', 'amount' => 25000, 'due_date' => '2026-10-20'), strtotime('2026-10-25 00:00:00')), 'unpaid invoice is overdue exactly at due date plus five days');
+assertMikpusing(!billingInvoiceIsPastGracePeriod(array('status' => 'paid', 'amount' => 25000, 'due_date' => '2026-10-01'), strtotime('2026-10-20 00:00:00')), 'paid invoice never triggers isolation');
+assertMikpusing(!billingInvoiceIsPastGracePeriod(array('status' => 'unpaid', 'amount' => 0, 'due_date' => '2026-10-01'), strtotime('2026-10-20 00:00:00')), 'zero amount invoice never triggers isolation');
+assertMikpusing(billingCustomerHasPastDueInvoice(array(
+    array('status' => 'paid', 'amount' => 25000, 'due_date' => '2026-09-01'),
+    array('status' => 'unpaid', 'amount' => 25000, 'due_date' => '2026-10-20')
+), strtotime('2026-10-24 12:00:00')) === false, 'paid history plus current invoice within grace is not isolated');
+assertMikpusing(billingCustomerHasPastDueInvoice(array(
+    array('status' => 'unpaid', 'amount' => 25000, 'due_date' => '2026-09-01'),
+    array('status' => 'paid', 'amount' => 25000, 'due_date' => '2026-10-01')
+), strtotime('2026-10-20 12:00:00')) === true, 'old unpaid overdue invoice still triggers isolation even if current invoice was paid');
+
 
 /* Use isolated temporary storage so invoice tests never touch production invoices. */
 $originalBillingFileEnv = getenv('MIKHMON_BILLING_FILE');
