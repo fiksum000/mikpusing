@@ -5,6 +5,7 @@ require_once __DIR__ . '/../include/billing.php';
 require_once __DIR__ . '/../include/pppoe_usage.php';
 require_once __DIR__ . '/../include/pppoe_packages.php';
 require_once __DIR__ . '/../lib/free_radius_client.php';
+require_once __DIR__ . '/../lib/decrypt_helper.php';
 
 function assertMikpusing($condition, $message) {
     if (!$condition) {
@@ -15,6 +16,9 @@ function assertMikpusing($condition, $message) {
 function assertCloseMikpusing($actual, $expected, $epsilon = 0.000000001) {
     return abs((float)$actual - (float)$expected) <= $epsilon;
 }
+
+assertMikpusing(encrypt('Mikhmon-legacy-123!') === 'hZqdoJ6hpl6enZiTm6pfaWNlWQ==', 'config encoding remains compatible with legacy Mikhmon format');
+assertMikpusing(decrypt('hZqdoJ6hpl6enZiTm6pfaWNlWQ==') === 'Mikhmon-legacy-123!', 'legacy Mikhmon config password can be decrypted without loading RouterOS API');
 
 assertMikpusing(billingDueDate('2025-02', 31) === '2025-02-28', 'February non-leap due date clamps to last day');
 assertMikpusing(billingDueDate('2024-02', 31) === '2024-02-29', 'leap-year due date clamps to February 29');
