@@ -1,22 +1,75 @@
 <?php
 if (!function_exists('customerPath')) {
   function customerPath() { return __DIR__ . '/../storage/customers.json'; }
-  function customerEnsureStorage() { $dir = dirname(customerPath()); if (!is_dir($dir)) @mkdir($dir, 0750, true); if (!file_exists(customerPath())) @file_put_contents(customerPath(), '[]', LOCK_EX); }
-  function customerReadAll() { customerEnsureStorage(); $rows = json_decode(@file_get_contents(customerPath()) ?: '[]', true); return is_array($rows) ? $rows : array(); }
-  function customerWriteAll($rows) { customerEnsureStorage(); @file_put_contents(customerPath(), json_encode(array_values($rows), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), LOCK_EX); }
-  function customerFind($username) { foreach (customerReadAll() as $row) if (isset($row['username']) && $row['username'] === $username) return $row; return null; }
+  function customerEnsureStorage() {
+    $dir = dirname(customerPath());
+    if (!is_dir($dir)) @mkdir($dir, 0750, true);
+    if (!file_exists(customerPath())) @file_put_contents(customerPath(), '[]', LOCK_EX);
+  }
+  function customerReadAll() {
+    customerEnsureStorage();
+    $rows = json_decode(@file_get_contents(customerPath()) ?: '[]', true);
+    return is_array($rows) ? $rows : array();
+  }
+  function customerWriteAll($rows) {
+    customerEnsureStorage();
+    $json = json_encode(array_values($rows), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    return $json !== false && @file_put_contents(customerPath(), $json, LOCK_EX) !== false;
+  }
+  function customerFind($username, $routerSession = null) {
+    foreach (customerReadAll() as $row) {
+      if (!isset($row['username']) || $row['username'] !== $username) continue;
+      if ($routerSession !== null && (string)($row['router_session'] ?? '') !== (string)$routerSession) continue;
+      return $row;
+    }
+    return null;
+  }
   function customerUpsertFromSecret($secret, $routerSession = '') {
-    if (empty($secret['name'])) return;
+    if (empty($secret['name'])) return false;
     $rows = customerReadAll(); $found = false;
     foreach ($rows as &$row) {
-      if (isset($row['username']) && $row['username'] === $secret['name']) {
-        $row['router_session'] = $routerSession; $row['mikrotik_comment'] = isset($secret['comment']) ? $secret['comment'] : ''; if (isset($secret['profile']) && strtoupper($secret['profile']) !== 'ISOLIR') { $row['profile'] = $secret['profile']; $row['normal_profile'] = $secret['profile']; } $row['last_sync'] = date('Y-m-d H:i:s'); $found = true; break;
+      if (($row['username'] ?? '') === $secret['name'] && (string)($row['router_session'] ?? '') === (string)$routerSession) {
+        $row['router_session'] = $routerSession;
+        $row['mikrotik_comment'] = (string)($secret['comment'] ?? '');
+        if (isset($secret['profile']) && strtoupper((string)$secret['profile']) !== 'ISOLIR') {
+          $row['profile'] = $secret['profile']; $row['normal_profile'] = $secret['profile'];
+        }
+        $row['status'] = (($secret['disabled'] ?? '') === 'true') ? 'disabled' : 'active';
+        $row['last_sync'] = date('Y-m-d H:i:s');
+        $found = true; break;
       }
     }
-    if (!$found) $rows[] = array('username' => $secret['name'], 'name' => isset($secret['comment']) && $secret['comment'] !== '' ? $secret['comment'] : $secret['name'], 'phone' => '', 'email' => '', 'amount' => 0, 'due_day' => 20, 'router_session' => $routerSession, 'profile' => isset($secret['profile']) ? $secret['profile'] : '', 'normal_profile' => isset($secret['profile']) ? $secret['profile'] : '', 'status' => isset($secret['disabled']) && $secret['disabled'] === 'true' ? 'disabled' : 'active', 'mikrotik_comment' => isset($secret['comment']) ? $secret['comment'] : '', 'last_sync' => date('Y-m-d H:i:s'));
-    customerWriteAll($rows);
+    unset($row);
+    if (!$found) {
+      $rows[] = array(
+        'username' => (string)$secret['name'],
+        'name' => !empty($secret['comment']) ? (string)$secret['comment'] : (string)$secret['name'],
+        'phone' => '', 'email' => '', 'amount' => 0, 'due_day' => 20,
+        'router_session' => (string)$routerSession,
+        'profile' => (string)($secret['profile'] ?? ''),
+        'normal_profile' => (string)($secret['profile'] ?? ''),
+        'status' => (($secret['disabled'] ?? '') === 'true') ? 'disabled' : 'active',
+        'mikrotik_comment' => (string)($secret['comment'] ?? ''),
+        'last_sync' => date('Y-m-d H:i:s')
+      );
+    }
+    return customerWriteAll($rows);
   }
-  function customerSyncSecrets($secrets, $routerSession = '') { foreach ((array)$secrets as $secret) customerUpsertFromSecret($secret, $routerSession); return customerReadAll(); }
-  function customerUpdate($username, $values) { $rows = customerReadAll(); foreach ($rows as &$row) if (isset($row['username']) && $row['username'] === $username) $row = array_merge($row, $values); customerWriteAll($rows); }
+  function customerSyncSecrets($secrets, $routerSession = '') {
+    foreach ((array)$secrets as $secret) customerUpsertFromSecret($secret, $routerSession);
+    return array_values(array_filter(customerReadAll(), function($row) use ($routerSession) {
+      return (string)($row['router_session'] ?? '') === (string)$routerSession;
+    }));
+  }
+  function customerUpdate($username, $values, $routerSession = null) {
+    $rows = customerReadAll(); $updated = false;
+    foreach ($rows as &$row) {
+      if (($row['username'] ?? '') !== $username) continue;
+      if ($routerSession !== null && (string)($row['router_session'] ?? '') !== (string)$routerSession) continue;
+      $row = array_merge($row, $values); $updated = true; break;
+    }
+    unset($row);
+    return $updated ? customerWriteAll($rows) : false;
+  }
 }
 ?>
