@@ -64,6 +64,8 @@ if (!function_exists('billingPath')) {
         if ($legacySession === $routerSession) continue;
       }
       $amount = isset($customer['amount']) && (int)$customer['amount'] > 0 ? (int)$customer['amount'] : (int)$defaultAmount;
+      // Never create a zero-value invoice that could accidentally trigger isolation.
+      if ($amount <= 0) continue;
       $dueDay = min($daysInMonth, max(1, (int)($customer['due_day'] ?? 20)));
       $dueDate = billingDueDate($period, $dueDay);
       $newInvoice = array(
