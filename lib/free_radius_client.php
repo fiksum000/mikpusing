@@ -25,8 +25,8 @@ if (!function_exists('mikhmonRadiusConfig')) {
     if ($loaded !== null) return $loaded;
     $base = mikhmonRadiusBaseConfig();
     $settings = mikhmonIntegrationSettings();
-    $backend = strtolower((string)($settings['ppp_auth_backend'] ?? ($base['ppp_auth_backend'] ?? 'routeros')));
-    $base['ppp_auth_backend'] = in_array($backend, array('routeros', 'radius'), true) ? $backend : 'routeros';
+    $backend = strtolower((string)($settings['ppp_auth_backend'] ?? ($base['ppp_auth_backend'] ?? 'radius')));
+    $base['ppp_auth_backend'] = in_array($backend, array('routeros', 'radius'), true) ? $backend : 'radius';
     $loaded = $base;
     return $loaded;
   }
