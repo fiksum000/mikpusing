@@ -17,12 +17,12 @@ apt-get install -y "php${PHP_VERSION}" "php${PHP_VERSION}-cli" "php${PHP_VERSION
 # Buat konfigurasi runtime baru setelah PHP tersedia. Password disimpan memakai
 # format encrypt() bawaan Mikhmon dan tidak pernah masuk ke Git.
 CONFIG_FILE="${APP_DIR}/include/config.php"
-if [[ ! -f "${CONFIG_FILE}" ]]; then
+if [[ ! -s "${CONFIG_FILE}" ]]; then
   INITIAL_ADMIN_PASSWORD="$(openssl rand -hex 18)"
   INITIAL_ADMIN_PASSWORD_ENC="$(php -r 'require $argv[1]; echo encrypt($argv[2]);' "${APP_DIR}/lib/routeros_api.class.php" "${INITIAL_ADMIN_PASSWORD}")"
   cat > "${CONFIG_FILE}" <<EOF
 <?php
-if (substr($_SERVER["REQUEST_URI"], -10) == "config.php") { header("Location:./"); }\$data['mikhmon'] = array ('1' => 'mikhmon<|<admin', 'mikhmon>|>${INITIAL_ADMIN_PASSWORD_ENC}');
+if (substr($_SERVER["REQUEST_URI"], -10) == "config.php") { header("Location:./"); }\$data['mikhmon'] = array ('1' => 'mikhmon<|<admin', '2' => 'mikhmon>|>${INITIAL_ADMIN_PASSWORD_ENC}');
 ?>
 EOF
   chown root:root "${CONFIG_FILE}"
