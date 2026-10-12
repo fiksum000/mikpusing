@@ -153,6 +153,10 @@ return array(
   'db_password' => '${RADIUS_DB_PASSWORD}',
   'db_name' => '${RADIUS_DB_NAME}',
   'ppp_auth_backend' => 'radius',
+  'disconnect_mode' => 'radius-dm',
+  'radius_nas_ip' => '${RADIUS_NAS_IP}',
+  'radius_client_secret' => '${RADIUS_CLIENT_SECRET}',
+  'radius_disconnect_port' => 1700,
 );
 EOF
 chown root:www-data /etc/mikhmon/radius.php
@@ -219,6 +223,7 @@ RADIUS_CLIENT_SECRET=${RADIUS_CLIENT_SECRET}
 
 RouterOS commands (review address/service before applying):
 /radius add address=${RADIUS_SERVER_IP} service=ppp,hotspot secret=${RADIUS_CLIENT_SECRET} authentication-port=1812 accounting-port=1813 timeout=1s
+/radius incoming set accept=yes port=1700
 /ppp aaa set use-radius=yes accounting=yes interim-update=5m
 /ip hotspot profile set [find] use-radius=yes radius-accounting=yes radius-interim-update=5m
 
