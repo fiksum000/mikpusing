@@ -68,4 +68,4 @@ WhatsApp memakai marker terpisah untuk invoice dan kuitansi. Kegagalan callback 
 
 ## Cakupan pengujian
 
-CI memeriksa PHP/shell/JS, logika invoice/FUP, callback HTTP dengan gateway tiruan, instalasi Ubuntu 22.04, autentikasi dan accounting UDP ke daemon FreeRADIUS, SQL accounting 64-bit, impor 1000 pelanggan, 4 generator invoice bersamaan, reinstall, backup�restore dan restart. Ini bukan uji LXC Proxmox atau perangkat MikroTik. Satu NAS per CT adalah batas versi ini; jangan gunakan form untuk mengganti NAS saat pelanggan router lain masih aktif.
+CI memeriksa PHP/shell/JS, logika invoice/FUP, callback HTTP dengan gateway tiruan, instalasi Ubuntu 22.04, autentikasi dan accounting UDP ke daemon FreeRADIUS, SQL accounting 64-bit, impor 1000 pelanggan, 4 generator invoice bersamaan, reinstall, backup-restore dan restart. Ini bukan uji LXC Proxmox atau perangkat MikroTik. Satu NAS per CT adalah batas versi ini; jangan gunakan form untuk mengganti NAS saat pelanggan router lain masih aktif.
