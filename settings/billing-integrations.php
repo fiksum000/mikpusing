@@ -50,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_integration_sett
       $message = 'Pilih backend RouterOS lokal atau FreeRADIUS.'; $messageType = 'danger';
     } elseif (!billingIntegrationValidIpv4($radiusServerIp) || !billingIntegrationValidIpv4($radiusNasIp) || !billingIntegrationValidIpv4($portalIp)) {
       $message = 'Alamat IP harus IPv4 yang valid. Kosongkan jika belum diketahui.'; $messageType = 'danger';
-    } elseif ($backend === 'radius' && !$radiusReady) {
+    } elseif ($backend === 'radius' && ($radiusServerIp === '' || $radiusNasIp === '')) {\n      $message = 'Mode RADIUS memerlukan IP LAN CT dan IP sumber MikroTik (NAS).'; $messageType = 'danger';\n    } elseif ($backend === 'radius' && !$radiusReady) {
       $message = 'FreeRADIUS belum dikonfigurasi. Jalankan installer RADIUS satu kali di CT terlebih dahulu; mode tidak diubah.'; $messageType = 'danger';
     } elseif ($hotspotProfiles !== '' && !preg_match('/^[A-Za-z0-9_. ,@-]{1,500}$/', $hotspotProfiles)) {
       $message = 'Nama profile Hotspot hanya boleh berisi huruf, angka, titik, garis bawah, spasi, koma, @, dan minus.'; $messageType = 'danger';
@@ -177,7 +177,7 @@ $radiusSecretFromPost = ''; // Never persist shared secrets in the web configura
     if(validIpv4(portal)){
       setText('isolirDryCode','cd /var/www/mikhmon && php deploy/configure-isolir-routeros.php --portal-ip '+portal);
       setText('isolirApplyCode','cd /var/www/mikhmon && php deploy/configure-isolir-routeros.php --portal-ip '+portal+' --apply');
-      setText('routerLocalCode','/ppp profile set [find where name="ISOLIR"] rate-limit=64k/64k address-list=MIKPUSING-ISOLIR\n# Setelah rule diverifikasi, pasang redirect HTTP di CT dengan perintah apply isolir di atas.');
+      setText('routerLocalCode',':local isolirProfile [/ppp profile find where name="ISOLIR"]\\n:if ([:len $isolirProfile] = 0) do={ /ppp profile add name="ISOLIR" rate-limit=64k/64k address-list=MIKPUSING-ISOLIR } else={ /ppp profile set $isolirProfile rate-limit=64k/64k address-list=MIKPUSING-ISOLIR }\\n# Setelah rule diverifikasi, pasang redirect HTTP di CT dengan perintah apply isolir di atas.');
     } else {
       setText('isolirDryCode','# Isi IP LAN CT untuk halaman isolir.');
       setText('isolirApplyCode','# Isi IP LAN CT untuk halaman isolir.');
