@@ -22,7 +22,7 @@ chmod +x deploy/install-ubuntu22.sh
 
 Installer memasang Apache/PHP, membuat password admin Mikhmon secara acak, memasang halaman isolir pada port 8081, membuat cron profil setiap 5 menit, dan generator invoice harian. Catat password awal dari `/root/mikhmon-initial-credentials.txt`.
 
-Di panel Mikhmon, buka **Billing & TriPay → Integrasi Billing / MikroTik / RADIUS**. Masukkan IP LAN CT (`192.168.200.179` pada CT pengguna saat ini), IP sumber router (NAS), IP portal isolir, dan **Harga default bulanan**. Harga 0 sengaja tidak membuat invoice otomatis. Mode Full RADIUS menggunakan `radius-dm` untuk memutus sesi melalui UDP 1700; jalur billing ini tidak memerlukan koneksi API. Jangan menempelkan secret ke chat atau source code.
+Di panel Mikhmon, buka **Admin Settings → Add Router — RADIUS NAS**. Masukkan IP LAN CT (`192.168.200.179` pada CT pengguna saat ini), IP sumber MikroTik (NAS), dan IP portal isolir. Halaman menyediakan perintah install FreeRADIUS untuk NAS pertama atau perintah untuk mendaftarkan ulang NAS bila FreeRADIUS sudah dipasang. Mode Full RADIUS memakai `radius-dm` untuk meminta pemutusan sesi melalui UDP 1700, tanpa RouterOS API pada scheduler billing. Shared secret tidak disimpan oleh halaman web.
 
 ## 2. Instal FreeRADIUS
 
@@ -75,7 +75,7 @@ Gunakan nilai persis dari `/root/mikpusing-radius-credentials.txt`. Periksa seti
 /ip firewall filter add chain=input action=accept src-address=<RADIUS_SERVER_IP> protocol=udp dst-port=1700 place-before=0 comment="MIKPUSING-RADIUS-DM"
 ~~~
 
-Pada firewall RouterOS, rule input UDP 1700 hanya mengizinkan DM yang berasal dari IP CT. Di firewall Proxmox/CT, izinkan UDP 1812 dan 1813 hanya dari IP NAS. Jika ada beberapa router, masing-masing IP sumber NAS harus didaftarkan sebagai client RADIUS yang sah; installer awal mendaftarkan satu NAS. RouterOS mengecek database user lokal terlebih dahulu, jadi gunakan nama akun tes yang belum ada pada database user lokal router. Pertahankan akun lokal untuk akses darurat dan jangan arahkan seluruh pelanggan sebelum uji berhasil.
+Pada firewall RouterOS, rule input UDP 1700 hanya mengizinkan DM dari IP CT. Di firewall Proxmox/CT, izinkan UDP 1812 dan 1813 hanya dari IP NAS. Alur Add Router saat ini dikerjakan satu NAS per CT; jangan mendaftarkan router kedua memakai form yang sama sebelum dukungan multi-NAS ditambahkan. RouterOS dapat mengecek user lokal terlebih dahulu, jadi untuk tes gunakan username yang belum ada pada user lokal router. Pertahankan akun lokal untuk akses darurat dan jangan arahkan semua pelanggan sebelum uji berhasil.
 
 ## 6. Billing, isolir, dan pemulihan otomatis
 
