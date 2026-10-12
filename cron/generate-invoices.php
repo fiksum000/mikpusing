@@ -12,7 +12,9 @@ require_once __DIR__ . '/../include/customers.php';
 require_once __DIR__ . '/../include/billing.php';
 
 $period = date('Y-m');
-$defaultAmount = max(0, (int)(getenv('MIKHMON_DEFAULT_MONTHLY_AMOUNT') ?: 0));
+$integrationSettings = mikhmonIntegrationSettings();
+$defaultAmountEnv = getenv('MIKHMON_DEFAULT_MONTHLY_AMOUNT');
+$defaultAmount = max(0, (int)($defaultAmountEnv !== false && $defaultAmountEnv !== '' ? $defaultAmountEnv : ($integrationSettings['default_monthly_amount'] ?? 0)));
 $backendConfig = mikhmonRadiusConfig();
 $backend = strtolower((string)(getenv('MIKHMON_PPP_AUTH_BACKEND') ?: ($backendConfig['ppp_auth_backend'] ?? 'routeros')));
 $totalCreated = 0; $totalCustomers = 0; $errors = 0;
