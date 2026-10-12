@@ -38,7 +38,12 @@ if (!$invoice) {
   tripayCallbackRespond(404, array('success' => false, 'message' => 'Invoice not found'));
 }
 $expectedReference = trim((string)($invoice['tripay_reference'] ?? ''));
-if ($expectedReference !== '' && !hash_equals($expectedReference, $reference)) {
+if ($expectedReference === '') {
+  // Never mark an invoice paid from a callback unless a transaction reference
+  // was persisted when this invoice's checkout was created.
+  tripayCallbackRespond(409, array('success' => false, 'message' => 'No registered TriPay transaction for this invoice'));
+}
+if (!hash_equals($expectedReference, $reference)) {
   tripayCallbackRespond(403, array('success' => false, 'message' => 'Transaction reference does not match this invoice'));
 }
 $invoiceAmount = (int)($invoice['amount'] ?? -1);
