@@ -27,7 +27,7 @@ if [[ ! -s "${CONFIG_FILE}" ]]; then
   INITIAL_ADMIN_PASSWORD_ENC="$(php -r 'require $argv[1]; echo encrypt($argv[2]);' "${APP_DIR}/lib/decrypt_helper.php" "${INITIAL_ADMIN_PASSWORD}")"
   cat > "${CONFIG_FILE}" <<EOF
 <?php
-if (substr($_SERVER["REQUEST_URI"], -10) == "config.php") { header("Location:./"); }\$data['mikhmon'] = array ('1' => 'mikhmon<|<admin', '2' => 'mikhmon>|>${INITIAL_ADMIN_PASSWORD_ENC}');
+\$data['mikhmon'] = array ('1' => 'mikhmon<|<admin', '2' => 'mikhmon>|>${INITIAL_ADMIN_PASSWORD_ENC}');
 EOF
   chown root:root "${CONFIG_FILE}"
   chmod 0640 "${CONFIG_FILE}"

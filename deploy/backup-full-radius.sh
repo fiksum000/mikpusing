@@ -8,14 +8,21 @@ DEST="$BACKUP_ROOT/$(date +%Y%m%d-%H%M%S)-$$"
 mkdir -p "$DEST"
 DB=$(php -r '$c=require "/etc/mikhmon/radius.php"; echo $c["db_name"];')
 [[ "$DB" =~ ^[A-Za-z][A-Za-z0-9_]{0,30}$ ]] || exit 1
-# Use the same locks as application writers; cron is stopped during the snapshot.
-was_active=0
-if systemctl is-active --quiet cron; then was_active=1; systemctl stop cron; fi
-resume() { if [[ "$was_active" == 1 ]]; then systemctl start cron; fi; }
+# Brief maintenance window: stop inbound writes and schedulers before both snapshots.
+active_services=()
+resume() { for service in "${active_services[@]}"; do systemctl start "$service"; done; }
 trap resume EXIT
-# Put web behind maintenance externally before backup if callbacks/admin writes are active.
+for service in cron apache2 freeradius; do
+  if systemctl is-active --quiet "$service"; then
+    active_services+=("$service")
+    systemctl stop "$service"
+  fi
+done
+# Drain an automation already started before cron was stopped.
+exec 9>"$APP_DIR/storage/pppoe-profile-automation.lock"
+flock -w 120 9
 mysqldump --single-transaction --routines --triggers --databases "$DB" > "$DEST/radius.sql"
 tar --exclude='./.git' --exclude='./storage/backups' -czf "$DEST/app.tar.gz" -C "$APP_DIR" .
-tar -czf "$DEST/system.tar.gz" -C / etc/mikhmon etc/freeradius/3.0 etc/cron.d/mikhmon etc/cron.d/mikhmon-radius root/mikpusing-radius-credentials.txt
+tar -czf "$DEST/system.tar.gz" -C / etc/mikhmon etc/freeradius/3.0 etc/cron.d/mikhmon etc/cron.d/mikhmon-radius etc/apache2/sites-available/mikhmon.conf etc/apache2/sites-available/mikhmon-isolir.conf root/mikpusing-radius-credentials.txt
 (cd "$DEST" && sha256sum radius.sql app.tar.gz system.tar.gz > SHA256SUMS)
 echo "Backup lengkap: $DEST (privat; salin ke penyimpanan lain)."

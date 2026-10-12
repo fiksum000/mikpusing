@@ -8,7 +8,7 @@ $idleto = 'disable';
 <span style="display:none" id="idto">disable</span>
 <div id="navbar" class="navbar">
   <div class="navbar-left">
-    <a id="brand" class="text-center" href="./admin.php?id=sessions">MIKHPUSING</a>
+    <a id="brand" class="text-center" href="./admin.php?id=sessions">MIKPUSING</a>
     <a id="openNav" class="navbar-hover" href="javascript:void(0)"><i class="fa fa-bars"></i></a>
     <a id="closeNav" class="navbar-hover" href="javascript:void(0)"><i class="fa fa-bars"></i></a>
     <a id="cpage" class="navbar-left"><?= htmlspecialchars($mpage, ENT_QUOTES, 'UTF-8'); ?></a>
@@ -21,3 +21,5 @@ $idleto = 'disable';
 <?php } ?>
 </div>
 <div id="notify"><div class="message"></div></div><div id="temp"></div>
+
+<div id="main" class="main">

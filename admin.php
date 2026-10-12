@@ -196,8 +196,10 @@ if ($id == "login" || substr($url, -1) == "p") {
 	echo "<script>window.location='./admin.php?id=sessions'</script>";
 }
 ?>
+<?php if (isset($_SESSION["mikhmon"]) && $id !== "login") { ?></div>
 <script src="js/mikhmon-ui.<?= $theme; ?>.min.js"></script>
+<?php } ?>
 <script src="js/mikhmon.js?t=<?= str_replace(" ","_",date("Y-m-d H:i:s")); ?>"></script>
-<?php include('./include/info.php'); ?>
+</div>
 </body>
 </html>

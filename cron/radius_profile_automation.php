@@ -5,6 +5,26 @@
  * pass --apply to change radusergroup and reauthenticate active RouterOS sessions.
  */
 if (PHP_SAPI !== 'cli') { http_response_code(403); exit("CLI only\n"); }
+$lockPath = __DIR__ . '/../storage/pppoe-profile-automation.lock';
+$lockDir = dirname($lockPath);
+if (!is_dir($lockDir) && !@mkdir($lockDir, 0750, true) && !is_dir($lockDir)) {
+    fwrite(STDERR, date('c') . " Cannot create automation lock directory.\n");
+    exit(1);
+}
+$lockHandle = @fopen($lockPath, 'c');
+if (!$lockHandle || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
+    if (is_resource($lockHandle)) fclose($lockHandle);
+    echo date('c') . " RADIUS automation skipped: another run is still active.\n";
+    exit(0);
+}
+register_shutdown_function(function() use ($lockHandle) {
+    if (is_resource($lockHandle)) {
+        flock($lockHandle, LOCK_UN);
+        fclose($lockHandle);
+    }
+});
+
+
 require_once __DIR__ . '/../include/config.php';
 require_once __DIR__ . '/../lib/free_radius_client.php';
 $radiusConfig = mikhmonRadiusConfig();
@@ -47,7 +67,13 @@ $pending = array();
 $kickRequested = array();
 if (is_file($pendingPath)) {
     $storedPending = json_decode(@file_get_contents($pendingPath) ?: '{}', true);
-    if (is_array($storedPending)) $pending = $storedPending;
+    if (!is_array($storedPending)) { fwrite(STDERR, "Pending DM JSON rusak; pulihkan backup.\n"); exit(1); }
+    $pending = $storedPending;
+}
+function saveRadiusPending($path, $pending) {
+    $json = json_encode($pending, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    $tmp = $path . '.tmp.' . getmypid();
+    if ($json === false || file_put_contents($tmp, $json, LOCK_EX) === false || !rename($tmp, $path)) throw new RuntimeException('Gagal menyimpan antrean DM.');
 }
 $radiusDisconnectController = null;
 try {
@@ -129,8 +155,9 @@ try {
         $message = ($apply ? 'APPLY' : 'DRY-RUN') . " backend=radius user={$username} {$profile} -> {$target} usage_gb=" . ($usageGb === null ? 'unknown' : number_format($usageGb, 3, '.', ''));
         if (!$apply) { echo $message . PHP_EOL; continue; }
         try {
-            $radius->setProfile($username, $target);
             $pending[$username] = array('target' => $target, 'requested_at' => date('c'));
+            saveRadiusPending($pendingPath, $pending);
+            $radius->setProfile($username, $target);
             $kickRequested[$username] = $message;
             $changed++;
         } catch (Throwable $e) {
@@ -154,11 +181,8 @@ try {
                 $log("WARN backend=radius-dm user={$pendingUser} session_disconnect_pending errors={$kicked['errors']} details=" . preg_replace('/\s+/', ' ', $details) . "; retrying on next five-minute run");
             }
         }
-        $pendingJson = json_encode($pending, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-        if ($pendingJson === false || @file_put_contents($pendingPath, $pendingJson, LOCK_EX) === false) {
-            $errors++;
-            $log("ERROR unable_to_save_session_kick_pending_queue");
-        }
+        try { saveRadiusPending($pendingPath, $pending); }
+        catch (Throwable $e) { $errors++; $log('ERROR unable_to_save_session_kick_pending_queue'); }
     }
     $radius->disconnect();
 } catch (Throwable $e) {
