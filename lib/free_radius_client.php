@@ -29,6 +29,13 @@ if (!function_exists('mikhmonRadiusConfig')) {
     // reactivate RouterOS API for PPPoE/customer/billing operations.
     $base['ppp_auth_backend'] = 'radius';
     $base['disconnect_mode'] = 'radius-dm';
+    // The NAS page persists its current IP in integration_settings.json. Use it
+    // for Disconnect-Message targeting, while keeping the shared secret private
+    // in /etc/mikhmon/radius.php (or the protected config file).
+    $nasIp = trim((string)($settings['radius_nas_ip'] ?? ''));
+    if ($nasIp !== '' && filter_var($nasIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+      $base['radius_nas_ip'] = $nasIp;
+    }
     $loaded = $base;
     return $loaded;
   }
