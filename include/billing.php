@@ -1,30 +1,95 @@
 <?php
 if (!function_exists('billingPath')) {
-  function billingPath() { return __DIR__ . '/../storage/invoices.json'; }
+  function billingPath() {
+    $override = getenv('MIKHMON_BILLING_FILE');
+    return ($override !== false && trim($override) !== '') ? $override : (__DIR__ . '/../storage/invoices.json');
+  }
   function billingEnsureStorage() {
     $dir = dirname(billingPath());
-    if (!is_dir($dir)) @mkdir($dir, 0750, true);
-    if (!file_exists(billingPath())) @file_put_contents(billingPath(), '[]', LOCK_EX);
+    if (!is_dir($dir) && !@mkdir($dir, 0750, true) && !is_dir($dir)) {
+      throw new RuntimeException('Direktori storage invoice tidak bisa dibuat.');
+    }
+    if (!file_exists(billingPath()) && @file_put_contents(billingPath(), '[]', LOCK_EX) === false) {
+      throw new RuntimeException('File invoice tidak bisa dibuat.');
+    }
   }
   function billingReadInvoices() {
     billingEnsureStorage();
-    $rows = json_decode(@file_get_contents(billingPath()) ?: '[]', true);
-    return is_array($rows) ? $rows : array();
+    $raw = @file_get_contents(billingPath());
+    if ($raw === false) throw new RuntimeException('File invoice tidak bisa dibaca.');
+    $rows = json_decode($raw, true);
+    if (json_last_error() !== JSON_ERROR_NONE || !is_array($rows)) {
+      throw new RuntimeException('storage/invoices.json rusak atau bukan array JSON; penulisan dihentikan agar data tagihan tidak tertimpa.');
+    }
+    return $rows;
   }
-  function billingWriteInvoices($rows) {
-    billingEnsureStorage();
+
+  /** Write atomically while the caller holds the invoice lock. */
+  function billingAtomicWriteUnlocked($rows) {
     $json = json_encode(array_values($rows), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-    return $json !== false && @file_put_contents(billingPath(), $json, LOCK_EX) !== false;
+    if ($json === false) return false;
+    $path = billingPath();
+    $tmp = $path . '.tmp.' . getmypid() . '.' . bin2hex(random_bytes(6));
+    if (@file_put_contents($tmp, $json, LOCK_EX) === false) {
+      @unlink($tmp);
+      return false;
+    }
+    @chmod($tmp, 0640);
+    if (!@rename($tmp, $path)) {
+      @unlink($tmp);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Serialize every invoice read-modify-write operation across cron, callbacks
+   * and the web UI. Atomic rename prevents readers from observing partial JSON.
+   */
+  function billingWithInvoicesLock($mutator) {
+    billingEnsureStorage();
+    $lockPath = billingPath() . '.lock';
+    $lock = @fopen($lockPath, 'c');
+    if (!$lock || !flock($lock, LOCK_EX)) {
+      if (is_resource($lock)) fclose($lock);
+      throw new RuntimeException('Tidak bisa mengunci storage invoice.');
+    }
+    try {
+      $raw = @file_get_contents(billingPath());
+      if ($raw === false) throw new RuntimeException('File invoice tidak bisa dibaca saat terkunci.');
+      $rows = json_decode($raw, true);
+      if (json_last_error() !== JSON_ERROR_NONE || !is_array($rows)) {
+        throw new RuntimeException('storage/invoices.json rusak; perubahan invoice dibatalkan untuk melindungi data.');
+      }
+      $outcome = $mutator($rows);
+      if (is_array($outcome) && !empty($outcome['__billing_write'])) {
+        if (!billingAtomicWriteUnlocked($rows)) throw new RuntimeException('Gagal menyimpan file invoice secara atomik.');
+        return $outcome['value'] ?? true;
+      }
+      return $outcome;
+    } finally {
+      flock($lock, LOCK_UN);
+      fclose($lock);
+    }
+  }
+
+  function billingWriteInvoices($rows) {
+    try {
+      return billingWithInvoicesLock(function (&$current) use ($rows) {
+        $current = array_values($rows);
+        return array('__billing_write' => true, 'value' => true);
+      });
+    } catch (Throwable $e) {
+      error_log('Mikhmon billingWriteInvoices: ' . $e->getMessage());
+      return false;
+    }
   }
   function billingValidPeriod($period) {
-    if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', (string)$period)) return false;
+    if (!preg_match('/^\\d{4}-(0[1-9]|1[0-2])$/', (string)$period)) return false;
     $date = DateTimeImmutable::createFromFormat('!Y-m-d', $period . '-01');
     return $date && $date->format('Y-m') === $period;
   }
-  /**
-   * Stable, collision-resistant invoice identifier. Router session is included
-   * to keep same usernames on multiple local routers separate.
-   */
+  /** Stable invoice identifier; router session separates duplicate usernames. */
   function billingInvoiceNo($customer, $period, $routerSession = '') {
     if (!billingValidPeriod($period)) throw new InvalidArgumentException('Periode invoice harus berformat YYYY-MM.');
     $identity = (string)$routerSession . '|' . (string)$customer;
@@ -46,62 +111,64 @@ if (!function_exists('billingPath')) {
   }
   function billingCreateForCustomers($customers, $period, $defaultAmount = 0) {
     if (!billingValidPeriod($period)) throw new InvalidArgumentException('Periode invoice harus berformat YYYY-MM.');
-    $invoices = billingReadInvoices(); $created = 0; $existing = array();
-    foreach ($invoices as $invoice) if (!empty($invoice['invoice_no'])) $existing[$invoice['invoice_no']] = $invoice;
-    $monthStart = DateTimeImmutable::createFromFormat('!Y-m-d', $period . '-01');
-    $daysInMonth = (int)$monthStart->format('t');
-    foreach ($customers as $customer) {
-      $name = trim((string)($customer['name'] ?? ''));
-      $username = trim((string)($customer['username'] ?? ''));
-      $routerSession = trim((string)($customer['router_session'] ?? ''));
-      if ($username === '') continue;
-      $invoiceNo = billingInvoiceNo($username, $period, $routerSession);
-      $legacyInvoiceNo = billingLegacyInvoiceNo($username, $period);
-      if (isset($existing[$invoiceNo])) continue;
-      if ($legacyInvoiceNo !== '' && isset($existing[$legacyInvoiceNo])) {
-        $legacyInvoice = $existing[$legacyInvoiceNo];
-        $legacyUsername = (string)($legacyInvoice['username'] ?? '');
-        $legacySession = (string)($legacyInvoice['router_session'] ?? '');
-        // Only suppress generation when the old invoice belongs to this exact subscriber.
-        // Shared 12-character prefixes must never cause another customer's bill to disappear.
-        if ($legacyUsername === $username && $legacySession === $routerSession) continue;
+    return billingWithInvoicesLock(function (&$invoices) use ($customers, $period, $defaultAmount) {
+      $created = 0;
+      $existing = array();
+      foreach ($invoices as $invoice) if (!empty($invoice['invoice_no'])) $existing[$invoice['invoice_no']] = $invoice;
+      $monthStart = DateTimeImmutable::createFromFormat('!Y-m-d', $period . '-01');
+      $daysInMonth = (int)$monthStart->format('t');
+      foreach ($customers as $customer) {
+        $name = trim((string)($customer['name'] ?? ''));
+        $username = trim((string)($customer['username'] ?? ''));
+        $routerSession = trim((string)($customer['router_session'] ?? ''));
+        if ($username === '') continue;
+        $invoiceNo = billingInvoiceNo($username, $period, $routerSession);
+        $legacyInvoiceNo = billingLegacyInvoiceNo($username, $period);
+        if (isset($existing[$invoiceNo])) continue;
+        if ($legacyInvoiceNo !== '' && isset($existing[$legacyInvoiceNo])) {
+          $legacyInvoice = $existing[$legacyInvoiceNo];
+          if ((string)($legacyInvoice['username'] ?? '') === $username
+              && (string)($legacyInvoice['router_session'] ?? '') === $routerSession) continue;
+        }
+        $amount = isset($customer['amount']) && (int)$customer['amount'] > 0 ? (int)$customer['amount'] : (int)$defaultAmount;
+        if ($amount <= 0) continue;
+        $dueDay = min($daysInMonth, max(1, (int)($customer['due_day'] ?? 20)));
+        $invoices[] = array(
+          'invoice_no' => $invoiceNo, 'period' => $period, 'router_session' => $routerSession,
+          'customer_name' => $name !== '' ? $name : $username, 'username' => $username,
+          'product' => !empty($customer['profile']) ? (string)$customer['profile'] : 'Paket Internet',
+          'device' => !empty($customer['device']) ? (string)$customer['device'] : $username,
+          'customer_phone' => (string)($customer['phone'] ?? ''),
+          'customer_email' => (string)($customer['email'] ?? ''),
+          'amount' => $amount, 'due_date' => billingDueDate($period, $dueDay), 'status' => 'unpaid',
+          'payment_method' => '', 'tripay_reference' => '', 'payment_url' => '',
+          'proof_url' => '', 'created_at' => date('Y-m-d H:i:s'), 'paid_at' => '',
+          'invoice_notification_sent_at' => '', 'payment_notification_sent_at' => ''
+        );
+        $existing[$invoiceNo] = true;
+        $created++;
       }
-      $amount = isset($customer['amount']) && (int)$customer['amount'] > 0 ? (int)$customer['amount'] : (int)$defaultAmount;
-      // Never create a zero-value invoice that could accidentally trigger isolation.
-      if ($amount <= 0) continue;
-      $dueDay = min($daysInMonth, max(1, (int)($customer['due_day'] ?? 20)));
-      $dueDate = billingDueDate($period, $dueDay);
-      $newInvoice = array(
-        'invoice_no' => $invoiceNo, 'period' => $period, 'router_session' => $routerSession,
-        'customer_name' => $name !== '' ? $name : $username, 'username' => $username,
-        'product' => !empty($customer['profile']) ? (string)$customer['profile'] : 'Paket PPPoE',
-        'device' => !empty($customer['device']) ? (string)$customer['device'] : $username,
-        'customer_phone' => (string)($customer['phone'] ?? ''),
-        'customer_email' => (string)($customer['email'] ?? ''),
-        'amount' => $amount, 'due_date' => $dueDate, 'status' => 'unpaid',
-        'payment_method' => '', 'tripay_reference' => '', 'payment_url' => '',
-        'proof_url' => '', 'created_at' => date('Y-m-d H:i:s'), 'paid_at' => ''
-      );
-      $invoices[] = $newInvoice;
-      $existing[$invoiceNo] = $newInvoice; $created++;
-    }
-    if (!billingWriteInvoices($invoices)) throw new RuntimeException('Gagal menulis storage/invoices.json.');
-    return $created;
+      return array('__billing_write' => true, 'value' => $created);
+    });
   }
   function billingFindInvoice($invoiceNo) {
-    foreach (billingReadInvoices() as $invoice) if (isset($invoice['invoice_no']) && $invoice['invoice_no'] === $invoiceNo) return $invoice;
+    foreach (billingReadInvoices() as $invoice) {
+      if (isset($invoice['invoice_no']) && $invoice['invoice_no'] === $invoiceNo) return $invoice;
+    }
     return null;
   }
   function billingUpdateInvoice($invoiceNo, $values) {
-    $rows = billingReadInvoices(); $updated = false;
-    foreach ($rows as &$row) {
-      if (isset($row['invoice_no']) && $row['invoice_no'] === $invoiceNo) {
-        $row = array_merge($row, $values); $updated = true; break;
+    return billingWithInvoicesLock(function (&$rows) use ($invoiceNo, $values) {
+      foreach ($rows as &$row) {
+        if (isset($row['invoice_no']) && $row['invoice_no'] === $invoiceNo) {
+          $row = array_merge($row, $values);
+          unset($row);
+          return array('__billing_write' => true, 'value' => true);
+        }
       }
-    }
-    unset($row);
-    if ($updated) return billingWriteInvoices($rows);
-    return false;
+      unset($row);
+      return false;
+    });
   }
 }
 ?>
