@@ -13,6 +13,16 @@ APP_DIR="${APP_DIR:-/var/www/mikhmon}"
   echo "Source Mikhmon tidak ditemukan di ${APP_DIR}; clone repo dahulu." >&2; exit 1;
 }
 
+# Avoid accidentally rotating the DB password/shared secret when the command is pasted twice.
+# Deliberate reconfiguration must be explicit and requires re-applying RouterOS settings.
+if [[ -f /etc/mikhmon/radius.php && "${MIKPUSING_RADIUS_RECONFIGURE:-0}" != "1" ]]; then
+  echo "FreeRADIUS sudah memiliki konfigurasi di /etc/mikhmon/radius.php; aman, tidak ada perubahan."
+  echo "Untuk memeriksa service: systemctl status freeradius mariadb --no-pager"
+  echo "Untuk melihat secret RouterOS yang saat ini dipakai: cat /root/mikpusing-radius-credentials.txt (root only)."
+  echo "Installer tidak mengubah password/secret otomatis pada instalasi yang sudah ada."
+  exit 0
+fi
+
 RADIUS_NAS_IP="${RADIUS_NAS_IP:-}"
 if [[ -z "${RADIUS_NAS_IP}" ]]; then
   read -r -p "IP sumber MikroTik yang akan mengirim request RADIUS (RADIUS_NAS_IP): " RADIUS_NAS_IP
