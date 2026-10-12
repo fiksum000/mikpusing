@@ -60,7 +60,13 @@ try {
         $isolateDay = min($daysInMonth, $dueDay + 5);
         $invoiceNo = billingInvoiceNo($username, $period, 'RADIUS');
         $invoice = billingFindInvoice($invoiceNo);
-        $paid = is_array($invoice) && ($invoice['status'] ?? '') === 'paid';
+        // Missing invoice is not interpreted as unpaid: prevent mass isolation if billing was not generated.
+        if (!is_array($invoice)) {
+            $skipped++;
+            $log("WARN backend=radius user={$username} invoice_missing; profile unchanged");
+            continue;
+        }
+        $paid = ($invoice['status'] ?? '') === 'paid';
         $usageBytes = array_key_exists($username, $usageMap) ? (float)$usageMap[$username] : null;
         $usageGb = $usageBytes === null ? null : $usageBytes / 1073741824;
         $target = $profile;
