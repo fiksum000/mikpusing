@@ -148,7 +148,13 @@ foreach ($data as $sessionName => $sessionData) {
             $package = pppoePackageForProfile($profile);
             if (!$package && !empty($customer['normal_profile'])) $package = pppoePackageForProfile((string)$customer['normal_profile']);
             if (!$package) { $skipped++; continue; }
-            $invoice = billingFindInvoice(billingInvoiceNo($username, $period, (string)$sessionName));
+            $invoiceNo = billingInvoiceNo($username, $period, (string)$sessionName);
+            $invoice = billingFindInvoice($invoiceNo);
+            if (!is_array($invoice)) {
+                // Compatibility with invoices created by older versions before hashed IDs.
+                $legacyInvoiceNo = billingLegacyInvoiceNo($username, $period);
+                if ($legacyInvoiceNo !== '') $invoice = billingFindInvoice($legacyInvoiceNo);
+            }
             // Missing invoice is not interpreted as unpaid: prevent mass isolation if billing was not generated.
             if (!is_array($invoice)) {
                 $skipped++;
