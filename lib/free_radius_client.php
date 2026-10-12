@@ -47,31 +47,108 @@ class RadiusClient {
     return $rows;
   }
 
-  /** Sum accounting octets for sessions that started within the selected month. */
-  public function getUsageBytes($username, $period = null) {
+  private function accountingStatePath() { return __DIR__ . '/../storage/radius_accounting.json'; }
+
+  /** Return the sampled monthly usage map: username => bytes. */
+  public function getMonthlyUsageMap($period = null) {
     $period = $period ?: date('Y-m');
-    $start = DateTimeImmutable::createFromFormat('!Y-m-d', $period . '-01');
-    if (!$start || $start->format('Y-m') !== $period) throw new InvalidArgumentException('Periode harus YYYY-MM.');
-    $end = $start->modify('+1 month');
-    $startText = $start->format('Y-m-d H:i:s');
-    $endText = $end->format('Y-m-d H:i:s');
-    $sql = "SELECT COALESCE(SUM(
-              COALESCE(acctinputoctets,0) + COALESCE(acctoutputoctets,0) +
-              (COALESCE(acctinputgigawords,0) + COALESCE(acctoutputgigawords,0)) * 4294967296
-            ),0) AS total_bytes
-            FROM radacct WHERE username = ? AND acctstarttime >= ? AND acctstarttime < ?";
-    $stmt = $this->db->prepare($sql);
-    $stmt->bind_param('sss', $username, $startText, $endText);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $row = $result->fetch_assoc();
-    $stmt->close();
-    return $row ? (float)$row['total_bytes'] : 0.0;
+    $path = $this->accountingStatePath();
+    if (!is_file($path)) return array();
+    $state = json_decode(@file_get_contents($path) ?: '{}', true);
+    if (!is_array($state) || !isset($state['usage'][$period]) || !is_array($state['usage'][$period])) return array();
+    return $state['usage'][$period];
   }
 
-  /** Return usage for a period in GiB. */
+  /** Read sampled byte counter for one username, or null until sampler runs. */
+  public function getUsageBytes($username, $period = null) {
+    $map = $this->getMonthlyUsageMap($period);
+    return array_key_exists($username, $map) ? (float)$map[$username] : null;
+  }
+
+  /** Return sampled usage for a period in GiB, or null before first sample. */
   public function getUsage($username, $period = null) {
-    return $this->getUsageBytes($username, $period) / 1073741824;
+    $bytes = $this->getUsageBytes($username, $period);
+    return $bytes === null ? null : ($bytes / 1073741824);
+  }
+
+  /**
+   * Sample FreeRADIUS accounting counters. Schedule every 5 minutes.
+   * Sampling deltas preserves monthly usage for sessions that cross month
+   * boundaries; accuracy depends on interim updates and this sampler running.
+   */
+  public function sampleAccountingCounters($period = null) {
+    $period = $period ?: date('Y-m');
+    $month = DateTimeImmutable::createFromFormat('!Y-m-d', $period . '-01');
+    if (!$month || $month->format('Y-m') !== $period) throw new InvalidArgumentException('Periode harus YYYY-MM.');
+    $monthStart = $month->format('Y-m-d H:i:s');
+    $monthEnd = $month->modify('+1 month')->format('Y-m-d H:i:s');
+    $sql = "SELECT radacctid, acctuniqueid, username, acctstarttime, acctstoptime,
+                   acctinputoctets, acctoutputoctets, acctinputgigawords, acctoutputgigawords
+            FROM radacct
+            WHERE acctstarttime < ? AND (acctstoptime IS NULL OR acctstoptime >= ?)";
+    $stmt = $this->db->prepare($sql);
+    $stmt->bind_param('ss', $monthEnd, $monthStart);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $rows = array();
+    while ($row = $result->fetch_assoc()) $rows[] = $row;
+    $stmt->close();
+
+    $path = $this->accountingStatePath();
+    $dir = dirname($path);
+    if (!is_dir($dir) && !@mkdir($dir, 0750, true) && !is_dir($dir)) throw new RuntimeException('Direktori storage tidak bisa dibuat.');
+    $lock = @fopen($path . '.lock', 'c');
+    if (!$lock || !flock($lock, LOCK_EX)) throw new RuntimeException('Tidak bisa mengunci file accounting state.');
+    try {
+      $state = is_file($path) ? json_decode(@file_get_contents($path) ?: '{}', true) : array();
+      if (!is_array($state)) $state = array();
+      if (!isset($state['sessions']) || !is_array($state['sessions'])) $state['sessions'] = array();
+      if (!isset($state['usage']) || !is_array($state['usage'])) $state['usage'] = array();
+      if (!isset($state['usage'][$period]) || !is_array($state['usage'][$period])) $state['usage'][$period] = array();
+      $now = time();
+      $sampled = 0;
+      foreach ($rows as $row) {
+        $username = trim((string)($row['username'] ?? ''));
+        if ($username === '') continue;
+        $unique = trim((string)($row['acctuniqueid'] ?? ''));
+        $sessionKey = $unique !== '' ? $unique : ('radacctid:' . (string)$row['radacctid']);
+        $current = max(0.0, (float)($row['acctinputoctets'] ?? 0) + (float)($row['acctoutputoctets'] ?? 0)
+          + (((float)($row['acctinputgigawords'] ?? 0) + (float)($row['acctoutputgigawords'] ?? 0)) * 4294967296));
+        $old = $state['sessions'][$sessionKey] ?? null;
+        if (is_array($old)) {
+          $last = max(0.0, (float)($old['last_counter_bytes'] ?? $current));
+          $delta = $current >= $last ? $current - $last : $current;
+        } else {
+          $started = !empty($row['acctstarttime']) ? strtotime($row['acctstarttime']) : false;
+          $delta = ($started !== false && $started >= strtotime($monthStart) && $started < strtotime($monthEnd)) ? $current : 0.0;
+        }
+        if ($delta > 0) {
+          $state['usage'][$period][$username] = (float)($state['usage'][$period][$username] ?? 0) + $delta;
+        }
+        $state['sessions'][$sessionKey] = array(
+          'username' => $username, 'last_counter_bytes' => $current,
+          'last_seen' => $now, 'acctstarttime' => (string)($row['acctstarttime'] ?? ''),
+          'acctstoptime' => (string)($row['acctstoptime'] ?? '')
+        );
+        $sampled++;
+      }
+      // Keep current and recent history only.
+      foreach ($state['sessions'] as $key => $session) {
+        $stop = !empty($session['acctstoptime']) ? strtotime($session['acctstoptime']) : false;
+        if ($stop !== false && $stop < ($now - 14 * 86400)) unset($state['sessions'][$key]);
+      }
+      ksort($state['usage']);
+      if (count($state['usage']) > 18) $state['usage'] = array_slice($state['usage'], -18, null, true);
+      $state['updated_at'] = date('c');
+      $json = json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+      if ($json === false) throw new RuntimeException('Gagal encode accounting state.');
+      $tmp = $path . '.tmp';
+      if (@file_put_contents($tmp, $json, LOCK_EX) === false || !@rename($tmp, $path)) throw new RuntimeException('Gagal menulis accounting state.');
+      return array('period' => $period, 'rows_sampled' => $sampled, 'users' => count($state['usage'][$period]), 'updated_at' => $state['updated_at']);
+    } finally {
+      flock($lock, LOCK_UN);
+      fclose($lock);
+    }
   }
 
   /** Set a user's FreeRADIUS group. Group should already exist in radgroupreply. */
