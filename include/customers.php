@@ -72,7 +72,7 @@ if (!function_exists('customerPath')) {
       $comment = (string)($secret['comment'] ?? '');
       $profile = (string)($secret['profile'] ?? '');
       $commentDueDay = null;
-      if (preg_match('/BILLING\\s*=\\s*(\\d{1,2})/i', $comment, $dueMatch)) $commentDueDay = min(31, max(1, (int)$dueMatch[1]));
+      if (preg_match('/BILLING\s*=\s*(\d{1,2})/i', $comment, $dueMatch)) $commentDueDay = min(31, max(1, (int)$dueMatch[1]));
       $status = (($secret['disabled'] ?? '') === 'true') ? 'disabled' : 'active';
       if (isset($index[$key])) {
         $i = $index[$key];
