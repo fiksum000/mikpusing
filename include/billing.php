@@ -94,6 +94,27 @@ if (!function_exists('billingPath')) {
       return false;
     }
   }
+  /** Acquire a non-blocking per-invoice lock before creating/retrying payment requests. */
+  function billingAcquireTripayCreationLock($invoiceNo) {
+    $invoiceNo = trim((string)$invoiceNo);
+    if ($invoiceNo === '') return false;
+    $dir = dirname(billingPath());
+    if (!is_dir($dir) && !@mkdir($dir, 0750, true) && !is_dir($dir)) return false;
+    $path = $dir . '/tripay-create-' . hash('sha256', $invoiceNo) . '.lock';
+    $handle = @fopen($path, 'c');
+    if (!$handle) return false;
+    if (!flock($handle, LOCK_EX | LOCK_NB)) {
+      fclose($handle);
+      return false;
+    }
+    return $handle;
+  }
+  function billingReleaseTripayCreationLock($handle) {
+    if (is_resource($handle)) {
+      flock($handle, LOCK_UN);
+      fclose($handle);
+    }
+  }
   function billingValidPeriod($period) {
     if (!preg_match('/^\\d{4}-(0[1-9]|1[0-2])$/', (string)$period)) return false;
     $date = DateTimeImmutable::createFromFormat('!Y-m-d', $period . '-01');
