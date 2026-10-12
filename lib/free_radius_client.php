@@ -1,11 +1,33 @@
 <?php
+if (!function_exists('mikhmonRadiusBaseConfig')) {
+  function mikhmonRadiusBaseConfig() {
+    static $base = null;
+    if ($base !== null) return $base;
+    $path = getenv('MIKHMON_RADIUS_CONFIG') ?: '/etc/mikhmon/radius.php';
+    $value = (is_file($path) && is_readable($path)) ? require $path : array();
+    $base = is_array($value) ? $value : array();
+    return $base;
+  }
+}
+if (!function_exists('mikhmonIntegrationSettings')) {
+  function mikhmonIntegrationSettings() {
+    static $settings = null;
+    if ($settings !== null) return $settings;
+    $path = __DIR__ . '/../storage/integration_settings.json';
+    $value = is_file($path) ? json_decode(@file_get_contents($path) ?: '{}', true) : array();
+    $settings = is_array($value) ? $value : array();
+    return $settings;
+  }
+}
 if (!function_exists('mikhmonRadiusConfig')) {
   function mikhmonRadiusConfig() {
     static $loaded = null;
     if ($loaded !== null) return $loaded;
-    $path = getenv('MIKHMON_RADIUS_CONFIG') ?: '/etc/mikhmon/radius.php';
-    $value = (is_file($path) && is_readable($path)) ? require $path : array();
-    $loaded = is_array($value) ? $value : array();
+    $base = mikhmonRadiusBaseConfig();
+    $settings = mikhmonIntegrationSettings();
+    $backend = strtolower((string)($settings['ppp_auth_backend'] ?? ($base['ppp_auth_backend'] ?? 'routeros')));
+    $base['ppp_auth_backend'] = in_array($backend, array('routeros', 'radius'), true) ? $backend : 'routeros';
+    $loaded = $base;
     return $loaded;
   }
 }
