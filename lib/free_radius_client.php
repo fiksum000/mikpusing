@@ -228,20 +228,39 @@ class RadiusClient {
     return true;
   }
 
-  /** Add/update a RADIUS user's cleartext password and group. */
+  /** Add/update a RADIUS user's password and group atomically. */
   public function upsertUser($username, $password, $profile) {
     $username = trim((string)$username);
+    $profile = trim((string)$profile);
     if ($username === '' || $password === '') throw new InvalidArgumentException('Username/password wajib diisi.');
-    // FreeRADIUS radcheck has no portable unique key across installations.
     $this->db->begin_transaction();
     try {
+      // Validate the requested group before changing credentials. Keep password
+      // and membership in one transaction so an invalid group cannot leave a
+      // subscriber with a password but no intended access policy.
+      if ($profile !== '') {
+        $stmt = $this->db->prepare('SELECT 1 FROM radgroupreply WHERE groupname = ? LIMIT 1');
+        $stmt->bind_param('s', $profile);
+        $stmt->execute();
+        $exists = $stmt->get_result()->fetch_row();
+        $stmt->close();
+        if (!$exists) throw new RuntimeException('Group RADIUS tidak ditemukan di radgroupreply: ' . $profile);
+      }
+
       $stmt = $this->db->prepare("DELETE FROM radcheck WHERE username = ? AND attribute = 'Cleartext-Password'");
       $stmt->bind_param('s', $username); $stmt->execute(); $stmt->close();
       $attribute = 'Cleartext-Password'; $op = ':=';
       $stmt = $this->db->prepare('INSERT INTO radcheck (username, attribute, op, value) VALUES (?, ?, ?, ?)');
       $stmt->bind_param('ssss', $username, $attribute, $op, $password); $stmt->execute(); $stmt->close();
+
+      if ($profile !== '') {
+        $stmt = $this->db->prepare('DELETE FROM radusergroup WHERE username = ?');
+        $stmt->bind_param('s', $username); $stmt->execute(); $stmt->close();
+        $priority = 1;
+        $stmt = $this->db->prepare('INSERT INTO radusergroup (username, groupname, priority) VALUES (?, ?, ?)');
+        $stmt->bind_param('ssi', $username, $profile, $priority); $stmt->execute(); $stmt->close();
+      }
       $this->db->commit();
-      if ($profile !== '') $this->setProfile($username, $profile);
     } catch (Throwable $e) {
       $this->db->rollback();
       throw $e;
