@@ -61,7 +61,7 @@ if (!class_exists('MikhmonRadiusDisconnectClient')) {
       }
 
       $command = array(
-        $this->radclient, '-r', '1', '-t', '3',
+        $this->radclient, '-x', '-r', '1', '-t', '3',
         $this->nasIp . ':' . $this->port, 'disconnect', $this->secret
       );
       $pipes = array();
