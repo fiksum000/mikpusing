@@ -8,7 +8,7 @@ if (PHP_SAPI !== 'cli') { http_response_code(403); exit("CLI only\n"); }
 require_once __DIR__ . '/../include/config.php';
 require_once __DIR__ . '/../lib/free_radius_client.php';
 $radiusConfig = mikhmonRadiusConfig();
-$radiusDisconnectMode = strtolower((string)($radiusConfig['disconnect_mode'] ?? 'routeros-api'));
+$radiusDisconnectMode = strtolower((string)($radiusConfig['disconnect_mode'] ?? 'radius-dm'));
 if ($radiusDisconnectMode === 'radius-dm') {
     require_once __DIR__ . '/../lib/radius_disconnect_client.php';
 } else {
