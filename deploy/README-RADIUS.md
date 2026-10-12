@@ -22,6 +22,8 @@ chmod +x deploy/install-ubuntu22.sh
 
 Installer memasang Apache/PHP, membuat password admin Mikhmon secara acak, memasang halaman isolir pada port 8081, membuat cron profil setiap 5 menit, dan generator invoice harian. Catat password awal dari `/root/mikhmon-initial-credentials.txt`.
 
+Di panel Mikhmon, buka **Billing & TriPay → Integrasi Billing / MikroTik / RADIUS**. Masukkan IP LAN CT, IP sumber router (NAS), IP portal isolir, dan **Harga default bulanan**. Harga 0 sengaja tidak membuat invoice otomatis. Halaman ini membuat perintah siap salin untuk pemasangan RADIUS, pengaktifan pada RouterOS, isolir, dan tes service. Jangan menempelkan secret ke chat atau source code.
+
 ## 2. Instal FreeRADIUS
 
 Jalankan di CT yang sama sebagai root. Ganti IP contoh di bawah sesuai jaringanmu: `RADIUS_NAS_IP` adalah IP sumber MikroTik ke RADIUS, sedangkan `RADIUS_SERVER_IP` adalah IP LAN CT.
@@ -32,7 +34,9 @@ chmod +x deploy/install-freeradius.sh
 RADIUS_NAS_IP=192.0.2.2 RADIUS_SERVER_IP=192.0.2.10 ./deploy/install-freeradius.sh
 ~~~
 
-Installer membuat password MariaDB dan shared secret RADIUS yang acak, mengimpor schema FreeRADIUS paket Ubuntu, menyiapkan group contoh, serta menaruh kredensial di `/root/mikpusing-radius-credentials.txt` dengan mode 0600.
+Installer membuat password MariaDB dan shared secret RADIUS yang acak, mengimpor schema FreeRADIUS paket Ubuntu, menyiapkan group contoh, serta menaruh kredensial di `/root/mikpusing-radius-credentials.txt` dengan mode 0600. Jika file `/etc/mikhmon/radius.php` sudah ada, installer berhenti tanpa mengganti secret; ini mencegah koneksi putus jika perintah ditempel dua kali.
+
+Setelah instalasi RADIUS berhasil, kembali ke **Billing & Integrasi**, pilih backend **FreeRADIUS + MariaDB**, lalu klik **Simpan pengaturan integrasi**. Pilihan ini membuat scheduler Billing menggunakan group RADIUS; memasang service saja tidak otomatis mengganti mode aplikasi.
 
 **Jangan matikan akun lokal router.** Import user lokal ke RADIUS harus dilakukan secara terencana. Tambah router di Mikhmon menggunakan RouterOS API yang hanya dapat diakses dari CT/admin.
 
