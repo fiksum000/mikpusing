@@ -6,6 +6,7 @@
 if (PHP_SAPI !== 'cli') { http_response_code(403); exit("CLI only\n"); }
 date_default_timezone_set(getenv('TZ') ?: 'Asia/Jakarta');
 require_once __DIR__ . '/../include/config.php';
+require_once __DIR__ . '/../lib/routeros_api.class.php'; // loads the matching legacy encrypt/decrypt implementation for stored Fonnte tokens
 require_once __DIR__ . '/../include/billing.php';
 require_once __DIR__ . '/../include/customers.php';
 require_once __DIR__ . '/../include/fonnte_log.php';
