@@ -19,7 +19,7 @@ apt-get install -y "php${PHP_VERSION}" "php${PHP_VERSION}-cli" "php${PHP_VERSION
 CONFIG_FILE="${APP_DIR}/include/config.php"
 if [[ ! -s "${CONFIG_FILE}" ]]; then
   INITIAL_ADMIN_PASSWORD="$(openssl rand -hex 18)"
-  INITIAL_ADMIN_PASSWORD_ENC="$(php -r 'require $argv[1]; echo encrypt($argv[2]);' "${APP_DIR}/lib/routeros_api.class.php" "${INITIAL_ADMIN_PASSWORD}")"
+  INITIAL_ADMIN_PASSWORD_ENC="$(php -r 'require $argv[1]; echo encrypt($argv[2]);' "${APP_DIR}/lib/decrypt_helper.php" "${INITIAL_ADMIN_PASSWORD}")"
   cat > "${CONFIG_FILE}" <<EOF
 <?php
 if (substr($_SERVER["REQUEST_URI"], -10) == "config.php") { header("Location:./"); }\$data['mikhmon'] = array ('1' => 'mikhmon<|<admin', '2' => 'mikhmon>|>${INITIAL_ADMIN_PASSWORD_ENC}');
@@ -70,6 +70,7 @@ cat >/etc/cron.d/mikhmon <<EOF
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 */5 * * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/pppoe_profile_automation.php --apply >> storage/pppoe-automation.log 2>&1
+*/5 * * * * ${WEB_USER} test -r /etc/mikhmon/radius.php && cd ${APP_DIR} && /usr/bin/php cron/radius-accounting-snapshot.php >> storage/radius-accounting.log 2>&1
 5 0 * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/generate-invoices.php >> storage/invoice-generation.log 2>&1
 0 9 * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/notify_overdue.php >> storage/notify-overdue.log 2>&1
 10 2 * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/fonnte_log_cleanup.php >> storage/fonnte-cleanup.log 2>&1
