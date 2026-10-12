@@ -123,6 +123,9 @@ if ($id == "login" || substr($url, -1) == "p") {
 } elseif ($id == "radius-users") {
   include_once('./include/menu.php');
   include_once('./settings/radius-users.php');
+} elseif ($id == "billing-integrations") {
+  include_once('./include/menu.php');
+  include_once('./settings/billing-integrations.php');
 } elseif ($id == "billing" && (!empty($session) || is_file('/etc/mikhmon/radius.php'))) {
   include_once('./include/menu.php');
   include_once('./settings/billing.php');
