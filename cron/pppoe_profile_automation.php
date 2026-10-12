@@ -118,7 +118,7 @@ foreach ($data as $sessionName => $sessionData) {
             $customer = $customersByRouterUser[$customerKey] ?? array();
             $comment = (string)($secret['comment'] ?? '');
             $isolateDayOverride = null;
-            if (preg_match('/ISOLIR\\s*=\\s*(\\d{1,2})/i', $comment, $m)) $isolateDayOverride = (int)$m[1];
+            if (preg_match('/ISOLIR\s*=\s*(\d{1,2})/i', $comment, $m)) $isolateDayOverride = (int)$m[1];
 
             $package = pppoePackageForProfile($profile);
             if (!$package && !empty($customer['normal_profile'])) $package = pppoePackageForProfile((string)$customer['normal_profile']);
