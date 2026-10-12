@@ -51,8 +51,8 @@ cat >/etc/apache2/sites-available/mikhmon.conf <<EOF
     <Directory ${APP_DIR}/storage>
         Require all denied
     </Directory>
-    ErrorLog ${APACHE_LOG_DIR}/mikhmon-error.log
-    CustomLog ${APACHE_LOG_DIR}/mikhmon-access.log combined
+    ErrorLog \${APACHE_LOG_DIR}/mikhmon-error.log
+    CustomLog \${APACHE_LOG_DIR}/mikhmon-access.log combined
 </VirtualHost>
 EOF
 a2ensite mikhmon.conf
@@ -70,7 +70,8 @@ chmod +x "${APP_DIR}/cron/pppoe_profile_automation.php" "${APP_DIR}/cron/fonnte_
 cat >/etc/cron.d/mikhmon <<EOF
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-*/15 * * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/pppoe_profile_automation.php >> storage/pppoe-automation.log 2>&1
+*/15 * * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/pppoe_profile_automation.php --apply >> storage/pppoe-automation.log 2>&1
+0 9 * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/notify_overdue.php >> storage/notify-overdue.log 2>&1
 10 2 * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/fonnte_log_cleanup.php >> storage/fonnte-cleanup.log 2>&1
 EOF
 chmod 0644 /etc/cron.d/mikhmon
