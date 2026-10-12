@@ -94,8 +94,8 @@ if (!function_exists('billingPath')) {
       return false;
     }
   }
-  /** Acquire a non-blocking per-invoice lock before creating/retrying payment requests. */
-  function billingAcquireTripayCreationLock($invoiceNo) {
+  /** Acquire a non-blocking per-invoice lock across checkout creation, callbacks, and notifications. */
+  function billingAcquireInvoiceLock($invoiceNo) {
     $invoiceNo = trim((string)$invoiceNo);
     if ($invoiceNo === '') return false;
     $dir = dirname(billingPath());
@@ -109,7 +109,7 @@ if (!function_exists('billingPath')) {
     }
     return $handle;
   }
-  function billingReleaseTripayCreationLock($handle) {
+  function billingReleaseInvoiceLock($handle) {
     if (is_resource($handle)) {
       flock($handle, LOCK_UN);
       fclose($handle);
