@@ -1,20 +1,87 @@
 <?php
+/**
+ * PPPoE monthly usage accounting based on MikroTik Simple Queue counters.
+ * For accurate per-subscriber FUP, define a queue named after the PPP user,
+ * set the queue comment to the PPP username, or target its static remote-address.
+ */
 if (!function_exists('pppoeUsagePath')) {
   function pppoeUsagePath() { return __DIR__ . '/../storage/pppoe_usage.json'; }
-  function pppoeUsageRead() { if (!file_exists(pppoeUsagePath())) return array(); $data = json_decode(@file_get_contents(pppoeUsagePath()) ?: '{}', true); return is_array($data) ? $data : array(); }
-  function pppoeUsageWrite($data) { $dir = dirname(pppoeUsagePath()); if (!is_dir($dir)) @mkdir($dir, 0750, true); @file_put_contents(pppoeUsagePath(), json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), LOCK_EX); }
-  function pppoeBytesToGb($bytes) { return ((float)$bytes / 1073741824); }
-  function pppoeReadQueueCounters($api, $username) {
-    $rows = $api->comm('/queue/simple/print'); $total = 0;
-    foreach ((array)$rows as $row) {
-      $name = isset($row['name']) ? (string)$row['name'] : '';
-      $target = isset($row['target']) ? (string)$row['target'] : '';
-      if ($name !== $username && strpos($target, $username) === false) continue;
-      foreach (array('bytes', 'bytes-in', 'bytes-out') as $key) if (isset($row[$key])) { $parts = explode('/', (string)$row[$key]); foreach ($parts as $part) $total += (float)preg_replace('/[^0-9.]/', '', $part); }
-    }
-    return $total;
+  function pppoeUsageRead() {
+    $path = pppoeUsagePath();
+    if (!is_file($path)) return array();
+    $decoded = json_decode(@file_get_contents($path) ?: '{}', true);
+    return is_array($decoded) ? $decoded : array();
   }
-  function pppoeMonthlyUsageGb($api, $routerSession, $username, $period) {
-    $current = pppoeReadQueueCounters($api, $username); $all = pppoeUsageRead(); $key = $routerSession . '|' . $username . '|' . $period; $previous = isset($all[$key]['counter_bytes']) ? (float)$all[$key]['counter_bytes'] : $current; $usage = max(0, $current - $previous); $all[$key] = array('counter_bytes' => $current, 'usage_gb' => pppoeBytesToGb($usage), 'updated_at' => date('Y-m-d H:i:s')); pppoeUsageWrite($all); return pppoeBytesToGb($usage); }
+  function pppoeUsageWrite($data) {
+    $dir = dirname(pppoeUsagePath());
+    if (!is_dir($dir) && !@mkdir($dir, 0750, true) && !is_dir($dir)) return false;
+    $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    return $json !== false && @file_put_contents(pppoeUsagePath(), $json, LOCK_EX) !== false;
+  }
+  function pppoeBytesToGb($bytes) { return ((float)$bytes / 1073741824); }
+
+  /**
+   * Return cumulative octets for matching queues, or null if none match.
+   * Queue rows should be fetched once per router, not once per subscriber.
+   */
+  function pppoeReadQueueCounters($queueRows, $secret) {
+    $username = (string)($secret['name'] ?? '');
+    $remote = trim((string)($secret['remote-address'] ?? ''));
+    $total = 0.0; $matched = false;
+    foreach ((array)$queueRows as $row) {
+      $name = (string)($row['name'] ?? '');
+      $comment = (string)($row['comment'] ?? '');
+      $target = (string)($row['target'] ?? '');
+      $match = $username !== '' && ($name === $username || $comment === $username);
+      if (!$match && $remote !== '' && $remote !== '0.0.0.0' && strpos($target, $remote) !== false) $match = true;
+      if (!$match) continue;
+      $matched = true;
+      if (isset($row['bytes'])) {
+        foreach (explode('/', (string)$row['bytes']) as $part) $total += (float)preg_replace('/[^0-9.]/', '', $part);
+      } else {
+        foreach (array('bytes-in', 'bytes-out') as $key) {
+          if (isset($row[$key])) $total += (float)preg_replace('/[^0-9.]/', '', (string)$row[$key]);
+        }
+      }
+    }
+    return $matched ? $total : null;
+  }
+
+  /**
+   * Maintain an accumulated monthly counter, handling counter resets/reboots.
+   * First observation in a period becomes the baseline; historical traffic
+   * from before this script's first observation cannot be reconstructed.
+   */
+  function pppoeMonthlyUsageGb($currentCounterBytes, $routerSession, $username, $period) {
+    if (!is_numeric($currentCounterBytes) || (float)$currentCounterBytes < 0) return null;
+    $all = pppoeUsageRead();
+    $key = (string)$routerSession . '|' . (string)$username . '|' . (string)$period;
+    $current = (float)$currentCounterBytes;
+    if (!isset($all[$key]) || !is_array($all[$key])) {
+      $all[$key] = array(
+        'last_counter_bytes' => $current,
+        'accumulated_bytes' => 0.0,
+        'usage_gb' => 0.0,
+        'updated_at' => date('Y-m-d H:i:s'),
+        'baseline' => true,
+      );
+      pppoeUsageWrite($all);
+      return 0.0;
+    }
+    $last = max(0.0, (float)($all[$key]['last_counter_bytes'] ?? $current));
+    $accumulated = max(0.0, (float)($all[$key]['accumulated_bytes'] ?? 0));
+    // A decrease normally means the queue/router counter was reset.
+    $delta = $current >= $last ? ($current - $last) : $current;
+    $accumulated += $delta;
+    $all[$key] = array(
+      'last_counter_bytes' => $current,
+      'accumulated_bytes' => $accumulated,
+      'usage_gb' => pppoeBytesToGb($accumulated),
+      'updated_at' => date('Y-m-d H:i:s'),
+      'baseline' => false,
+    );
+    pppoeUsageWrite($all);
+    return pppoeBytesToGb($accumulated);
+  }
 }
 ?>
