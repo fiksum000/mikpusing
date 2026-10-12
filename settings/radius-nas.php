@@ -190,7 +190,7 @@ $radiusReady = is_file(getenv('MIKHMON_RADIUS_CONFIG') ?: '/etc/mikhmon/radius.p
   ['radiusNasSecret'].forEach(function(id){var n=el(id);if(n)n.addEventListener('input',render);});
   ['radius_server_ip','radius_nas_ip','portal_ip','hotspot_profiles'].forEach(function(name){
     var n=document.querySelector('[name="'+name+'"]'); if(n)n.addEventListener('input',function(){
-      server=el('radiusNasSecret') ? String(document.querySelector('[name="radius_server_ip"]').value||'').trim():server;
+      server=String(document.querySelector('[name="radius_server_ip"]').value||'').trim();
       nas=String(document.querySelector('[name="radius_nas_ip"]').value||'').trim();
       portal=String(document.querySelector('[name="portal_ip"]').value||'').trim();
       render();
