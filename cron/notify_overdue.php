@@ -12,6 +12,20 @@ require_once __DIR__ . '/../include/customers.php';
 require_once __DIR__ . '/../include/fonnte_log.php';
 require_once __DIR__ . '/../include/wa_templates.php';
 
+$runLockPath = __DIR__ . '/../storage/notify-overdue.lock';
+$runLock = @fopen($runLockPath, 'c');
+if (!$runLock || !flock($runLock, LOCK_EX | LOCK_NB)) {
+    if (is_resource($runLock)) fclose($runLock);
+    echo date('c') . " Reminder run skipped: another run is active.\\n";
+    exit(0);
+}
+register_shutdown_function(function() use ($runLock) {
+    if (is_resource($runLock)) {
+        flock($runLock, LOCK_UN);
+        fclose($runLock);
+    }
+});
+
 $statePath = __DIR__ . '/../storage/reminder_state.json';
 $stateDir = dirname($statePath);
 if (!is_dir($stateDir) && !@mkdir($stateDir, 0750, true) && !is_dir($stateDir)) {
@@ -26,7 +40,16 @@ $today = date('Y-m-d');
 $todayTime = strtotime($today);
 $sent = 0; $skipped = 0; $failed = 0;
 
-foreach (billingReadInvoices() as $invoice) {
+foreach (billingReadInvoices() as $listedInvoice) {
+    $invoiceNo = trim((string)($listedInvoice['invoice_no'] ?? ''));
+    if ($invoiceNo === '') { $skipped++; continue; }
+    $invoiceLock = billingAcquireInvoiceLock($invoiceNo);
+    if (!$invoiceLock) { $skipped++; continue; }
+    try {
+    // Reload after locking so a concurrent PAID callback cannot leave a stale
+    // unpaid snapshot causing a reminder to be sent after the customer paid.
+    $invoice = billingFindInvoice($invoiceNo);
+    if (!is_array($invoice)) { $skipped++; continue; }
     $status = strtolower((string)($invoice['status'] ?? 'unpaid'));
     if (!in_array($status, array('unpaid', 'pending', 'failed'), true)) { $skipped++; continue; }
     $dueDate = (string)($invoice['due_date'] ?? '');
@@ -67,6 +90,9 @@ foreach (billingReadInvoices() as $invoice) {
     } else {
         $failed++;
         echo "FAILED invoice={$invoiceNo} type={$kind} reason=" . preg_replace('/\s+/', ' ', (string)($result['reason'] ?? 'unknown')) . "\n";
+    }
+    } finally {
+        billingReleaseInvoiceLock($invoiceLock);
     }
 }
 
