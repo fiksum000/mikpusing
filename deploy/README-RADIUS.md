@@ -1,6 +1,6 @@
 # MikroTik RADIUS, Billing, dan Halaman Isolir di Proxmox
 
-Panduan ini menyiapkan Mikhmon + FreeRADIUS + MariaDB untuk pelanggan PPPoE dan Hotspot. Dalam **mode Full RADIUS**, autentikasi, group paket, accounting, perubahan group billing, dan pemutusan sesi memakai RADIUS Disconnect-Message (DM). Scheduler billing tidak memerlukan RouterOS API. API tetap opsional untuk fitur administrasi router lain di UI Mikhmon.
+Panduan ini menyiapkan Mikhmon + FreeRADIUS + MariaDB untuk pelanggan PPPoE dan Hotspot. Dalam **mode Full RADIUS**, autentikasi, group paket, accounting, perubahan group billing, halaman isolir, dan pemutusan sesi memakai RADIUS Disconnect-Message (DM). Alur setup router dan scheduler billing tidak membutuhkan username/password RouterOS API.
 
 ## Target instalasi
 
