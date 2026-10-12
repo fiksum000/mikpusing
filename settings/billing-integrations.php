@@ -170,13 +170,14 @@ $radiusSecretFromPost = ''; // Never persist shared secrets in the web configura
   </div>
 
   <div class="card mt-3"><div class="card-header"><h3 class="card-title">1. Perintah di CT Proxmox</h3></div><div class="card-body">
-    <p>Jalankan sebagai root di CT Ubuntu 22.04. Installer RADIUS ditujukan untuk instalasi baru dan **jangan dijalankan ulang pada database RADIUS produksi**, karena setup awal membuat skema.</p>
+    <p>Jalankan sebagai root di CT Ubuntu 22.04. Installer RADIUS ditujukan untuk instalasi baru dan <strong>jangan dijalankan ulang pada database RADIUS produksi</strong>, karena setup awal membuat skema. Mode Full RADIUS menonaktifkan kebutuhan RouterOS API untuk scheduler billing: setelah mode ini disiapkan, pemutusan sesi dikirim sebagai RADIUS Disconnect-Message ke RouterOS v7.</p>
     <pre id="ctInstallCode" style="white-space:pre-wrap;word-break:break-word;">Memerlukan IP CT dan IP sumber MikroTik.</pre>
     <button type="button" class="group-item group-item-md" onclick="copyIntegrationCode('ctInstallCode')">Salin perintah install RADIUS</button>
+    <p class="text-muted">Perintah dry-run/apply berikut menggunakan RouterOS API. Untuk mode Full RADIUS tanpa API, gunakan perintah manual pada bagian 2A dan jangan jalankan perintah apply berbasis API.</p>
     <pre id="isolirDryCode" style="white-space:pre-wrap;word-break:break-word;">Memerlukan IP CT untuk portal isolir.</pre>
-    <button type="button" class="group-item group-item-md" onclick="copyIntegrationCode('isolirDryCode')">Salin dry-run rule isolir</button>
+    <button type="button" class="group-item group-item-md" onclick="copyIntegrationCode('isolirDryCode')">Salin dry-run rule isolir (API)</button>
     <pre id="isolirApplyCode" style="white-space:pre-wrap;word-break:break-word;"></pre>
-    <button type="button" class="group-item group-item-md" onclick="copyIntegrationCode('isolirApplyCode')">Salin perintah apply isolir</button>
+    <button type="button" class="group-item group-item-md" onclick="copyIntegrationCode('isolirApplyCode')">Salin apply isolir (API)</button>
   </div></div>
 
   <div class="card mt-3"><div class="card-header"><h3 class="card-title">2. Perintah RouterOS untuk PPPoE / Hotspot</h3></div><div class="card-body">
@@ -189,6 +190,13 @@ $radiusSecretFromPost = ''; // Never persist shared secrets in the web configura
     <pre id="routerLocalCode" style="white-space:pre-wrap;word-break:break-word;">Isi IP portal isolir untuk membuat perintah profile lokal.</pre>
     <button type="button" class="group-item group-item-md" onclick="copyIntegrationCode('routerLocalCode')">Salin profile isolir lokal PPPoE</button>
     <div class="alert bg-warning mt-3"><strong>Jangan langsung tempel ke semua router.</strong> Pertahankan akun admin lokal dan satu akun uji. Uji autentikasi, accounting, rule firewall dan pembayaran pada satu router lebih dahulu. Mengaktifkan RADIUS sebelum user dan group diuji dapat memutus akses pelanggan.</div>
+  </div></div>
+
+  <div class="card mt-3"><div class="card-header"><h3 class="card-title">2A. Rule halaman isolir RouterOS v7 tanpa API</h3></div><div class="card-body">
+    <p>Jalankan kode ini sekali di Terminal MikroTik setelah FreeRADIUS aktif dan group <code>ISOLIR</code> sudah mengembalikan atribut <code>Mikrotik-Address-List=MIKPUSING-ISOLIR</code>. Kode membuat atau memperbarui rule berdasarkan komentar khusus; tidak memakai RouterOS API.</p>
+    <pre id="routerNoApiIsolirCode" style="white-space:pre-wrap;word-break:break-word;">Isi IP LAN CT untuk menghasilkan rule RouterOS.</pre>
+    <button type="button" class="group-item group-item-md" onclick="copyIntegrationCode('routerNoApiIsolirCode')">Salin rule isolir tanpa API</button>
+    <div class="alert bg-warning mt-3">Periksa urutan dan firewall aktif sebelum menempelkan rule. Redirect transparan hanya untuk HTTP, bukan HTTPS.</div>
   </div></div>
 
   <div class="card mt-3"><div class="card-header"><h3 class="card-title">3. Alur otomatis setelah integrasi aktif</h3></div><div class="card-body">
@@ -247,14 +255,20 @@ tail -n 80 /var/www/mikhmon/storage/radius-accounting.log</pre>
     if(validIpv4(portal)){
       setText('isolirDryCode','cd /var/www/mikhmon && php deploy/configure-isolir-routeros.php --portal-ip '+portal);
       setText('isolirApplyCode','cd /var/www/mikhmon && php deploy/configure-isolir-routeros.php --portal-ip '+portal+' --apply');
-      setText('routerLocalCode',':if ([:len [/ppp profile find where name="'+localIsolirName+'"]] = 0) do={ /ppp profile add name="'+localIsolirName+'" rate-limit=64k/64k address-list=MIKPUSING-ISOLIR } else={ /ppp profile set [find where name="'+localIsolirName+'"] rate-limit=64k/64k address-list=MIKPUSING-ISOLIR }\n# Setelah rule diverifikasi, pasang redirect HTTP di CT dengan perintah apply isolir di atas.');
+      setText('routerNoApiIsolirCode',
+        ':if ([:len [/ip firewall nat find where comment="MIKPUSING-ISOLIR-HTTP"]] = 0) do={ /ip firewall nat add chain=dstnat src-address-list=MIKPUSING-ISOLIR protocol=tcp dst-port=80 dst-address-type=!local action=dst-nat to-addresses='+portal+' to-ports=8081 place-before=0 comment="MIKPUSING-ISOLIR-HTTP" } else={ /ip firewall nat set [find where comment="MIKPUSING-ISOLIR-HTTP"] chain=dstnat src-address-list=MIKPUSING-ISOLIR protocol=tcp dst-port=80 dst-address-type=!local action=dst-nat to-addresses='+portal+' to-ports=8081 }\n'+
+        ':if ([:len [/ip firewall filter find where comment="MIKPUSING-ISOLIR-PORTAL"]] = 0) do={ /ip firewall filter add chain=forward action=accept src-address-list=MIKPUSING-ISOLIR dst-address='+portal+' protocol=tcp dst-port=8081 place-before=0 comment="MIKPUSING-ISOLIR-PORTAL" } else={ /ip firewall filter set [find where comment="MIKPUSING-ISOLIR-PORTAL"] chain=forward action=accept src-address-list=MIKPUSING-ISOLIR dst-address='+portal+' protocol=tcp dst-port=8081 }'
+      );
+      setText('routerLocalCode',':if ([:len [/ppp profile find where name="'+localIsolirName+'"]] = 0) do={ /ppp profile add name="'+localIsolirName+'" rate-limit=64k/64k address-list=MIKPUSING-ISOLIR } else={ /ppp profile set [find where name="'+localIsolirName+'"] rate-limit=64k/64k address-list=MIKPUSING-ISOLIR }\n# Aturan profile lokal ini hanya untuk backend RouterOS lokal; backend Full RADIUS menggunakan group RADIUS ISOLIR.');
     } else {
       setText('isolirDryCode','# Isi IP LAN CT untuk halaman isolir.');
       setText('isolirApplyCode','# Isi IP LAN CT untuk halaman isolir.');
       setText('routerLocalCode','# Isi IP LAN CT untuk portal dan simpan pengaturan.');
+      setText('routerNoApiIsolirCode','# Isi IP LAN CT untuk menghasilkan rule RouterOS tanpa API.');
     }
     if(ipsOk&&safeSecret(secret)){
       var r=[':if ([:len [/radius find where comment="mikpusing-radius"]] > 0) do={ /radius set [find where comment="mikpusing-radius"] address='+server+' src-address='+nas+' service=ppp,hotspot secret='+secret+' authentication-port=1812 accounting-port=1813 timeout=1s } else={ /radius add address='+server+' src-address='+nas+' service=ppp,hotspot secret='+secret+' authentication-port=1812 accounting-port=1813 timeout=1s comment="mikpusing-radius" }',
+        '/radius incoming set accept=yes port=1700',
         '/ppp aaa set use-radius=yes accounting=yes interim-update=5m'];
       if(hs.length){
         hs.forEach(function(p){r.push('/ip hotspot profile set [find where name="'+p+'"] use-radius=yes radius-accounting=yes radius-interim-update=5m');});
