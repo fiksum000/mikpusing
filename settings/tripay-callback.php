@@ -33,23 +33,13 @@ $reference = trim((string)($payload['reference'] ?? ''));
 if ($merchantRef === '' || $reference === '' || $status === '') {
   tripayCallbackRespond(400, array('success' => false, 'message' => 'Missing transaction fields'));
 }
-// Serialize callbacks per invoice so duplicate/concurrent delivery cannot race
-// the paid-state write and WhatsApp notification marker.
-$callbackLockDir = __DIR__ . '/../storage';
-if (!is_dir($callbackLockDir) && !@mkdir($callbackLockDir, 0750, true) && !is_dir($callbackLockDir)) {
-  tripayCallbackRespond(503, array('success' => false, 'message' => 'Callback storage is unavailable'));
-}
-$callbackLockPath = $callbackLockDir . '/tripay-callback-' . hash('sha256', $merchantRef) . '.lock';
-$callbackLock = @fopen($callbackLockPath, 'c');
-if (!$callbackLock || !flock($callbackLock, LOCK_EX | LOCK_NB)) {
-  if (is_resource($callbackLock)) fclose($callbackLock);
-  tripayCallbackRespond(503, array('success' => false, 'message' => 'Another callback for this invoice is processing'));
+// Share the same per-invoice lock as checkout creation and WhatsApp delivery.
+$callbackLock = billingAcquireInvoiceLock($merchantRef);
+if (!$callbackLock) {
+  tripayCallbackRespond(503, array('success' => false, 'message' => 'Another operation for this invoice is processing; retry callback'));
 }
 register_shutdown_function(function() use ($callbackLock) {
-  if (is_resource($callbackLock)) {
-    flock($callbackLock, LOCK_UN);
-    fclose($callbackLock);
-  }
+  billingReleaseInvoiceLock($callbackLock);
 });
 
 $invoice = billingFindInvoice($merchantRef);
