@@ -119,9 +119,9 @@ try {
         $fup = trim((string)($package['fup_profile'] ?? ''));
         $quota = max(0.0, (float)($package['quota_gb'] ?? 0));
         $subscriberInvoices = $invoicesByUsername[$username] ?? array();
-        // No billing history means no automated isolation. Preserve the current
-        // group rather than treating a missing invoice as an unpaid invoice.
-        if (!$subscriberInvoices) {
+        // Without billing evidence do not undo an existing isolation; normal/free
+        // customers still receive FUP decisions independently of invoice generation.
+        if (!$subscriberInvoices && $profile === $isolir) {
             $skipped++;
             $log("WARN backend=radius user={$username} invoice_history_missing; profile unchanged");
             continue;
@@ -164,8 +164,7 @@ try {
             $errors++; $log("ERROR " . $message . " reason=" . preg_replace('/\s+/', ' ', $e->getMessage()));
         }
     }
-    // Batch all profile changes and earlier retries together: only two active-session
-    // list queries per router, rather than two list queries for every subscriber.
+    // Retry durable reconnect intents with a bounded packet/time budget.
     if ($apply && count($pending) > 0) {
         $toKick = array_values(array_unique(array_merge(array_keys($pending), array_keys($kickRequested))));
         usort($toKick, function($a, $b) use ($pending) { return strcmp($pending[$a]['last_attempt_at'] ?? '', $pending[$b]['last_attempt_at'] ?? ''); });

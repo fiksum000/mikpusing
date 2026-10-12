@@ -3,6 +3,8 @@ error_reporting(0);
 if (!isset($_SESSION['mikhmon'])) { header('Location:../admin.php?id=login'); exit; }
 require_once './include/pppoe_packages.php';
 require_once './lib/free_radius_client.php';
+require_once './lib/radius_pending.php';
+require_once './include/job_runtime.php';
 
 $config = pppoePackageRead();
 $message = '';
@@ -102,7 +104,17 @@ if (isset($_POST['save_packages'])) {
       $message = $validationError;
       $messageType = 'danger';
     } else {
+      $packageLock = false;
       try {
+        $packageLock = mikhmonJobLock('pppoe-profile-automation');
+        if (!$packageLock) throw new RuntimeException('Automasi sedang berjalan; coba simpan kembali sebentar lagi.');
+        // Persist reconnect intent before changing reply attributes.
+        foreach ($radius->listUsers() as $subscriber) {
+          $group = (string)($subscriber['profile'] ?? '');
+          if (isset($attributesToSync[$group]) && ($groupAttributes[$group] ?? array()) != $attributesToSync[$group]) {
+            radiusQueueReconnect($subscriber['username'], $group);
+          }
+        }
         // Sync group policy in MariaDB in one transaction; the editor does not
         // merely store labels which FreeRADIUS would ignore at authentication.
         $radius->upsertGroupsAttributes($attributesToSync);
@@ -110,7 +122,7 @@ if (isset($_POST['save_packages'])) {
         if (pppoePackageWrite($newConfig)) {
           $config = $newConfig;
           $groupAttributes = $radius->getGroupAttributes();
-          $message = 'Paket dan atribut kecepatan berhasil disimpan ke konfigurasi Mikhmon serta MariaDB RADIUS.';
+          $message = 'Paket dan atribut kecepatan berhasil disimpan ke konfigurasi Mikhmon serta MariaDB RADIUS. Sesi yang terdampak masuk antrean sambung ulang.';
           $messageType = 'success';
         } else {
           $message = 'Atribut group sudah disimpan di RADIUS, tetapi mapping paket gagal ditulis. Periksa permission storage lalu simpan ulang.';
@@ -119,6 +131,8 @@ if (isset($_POST['save_packages'])) {
       } catch (Throwable $e) {
         $message = 'Gagal menyimpan group RADIUS: ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8');
         $messageType = 'danger';
+      } finally {
+        if (is_resource($packageLock)) { flock($packageLock, LOCK_UN); fclose($packageLock); }
       }
     }
   }

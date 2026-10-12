@@ -1,6 +1,6 @@
 <?php
 /**
- * Create monthly invoices idempotently. Run daily from cron after configuring
+ * Create monthly invoices idempotently. Run every five minutes from cron after configuring
  * non-zero customer prices (or MIKHMON_DEFAULT_MONTHLY_AMOUNT).
  */
 if (PHP_SAPI !== 'cli') { http_response_code(403); exit("CLI only\n"); }
@@ -38,8 +38,9 @@ try {
     $secrets[] = array('name' => (string)($user['username'] ?? ''), 'profile' => (string)($user['profile'] ?? ''), 'comment' => '');
   }
   customerSyncSecrets($secrets, 'RADIUS');
-  $customers = array_values(array_filter(customerReadAll(), function($row) {
-    return (string)($row['router_session'] ?? '') === 'RADIUS';
+  $activeNames = array_fill_keys(array_column($secrets, 'name'), true);
+  $customers = array_values(array_filter(customerReadAll(), function($row) use ($activeNames) {
+    return (string)($row['router_session'] ?? '') === 'RADIUS' && isset($activeNames[(string)($row['username'] ?? '')]);
   }));
   $totalCustomers = count($customers);
   $created = billingCreateForCustomers($customers, $period, $defaultAmount);

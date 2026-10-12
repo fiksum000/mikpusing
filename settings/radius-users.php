@@ -49,7 +49,7 @@ try {
         if (!preg_match('/^[A-Za-z0-9_.@-]{1,64}$/', $username)) throw new InvalidArgumentException('Username tidak valid.');
         radiusQueueReconnect($username, 'deleted');
         $radius->deleteUser($username);
-        $message = 'User RADIUS dihapus dari tabel autentikasi. Pemutusan sesi aktif masuk antrean scheduler (maksimal satu siklus saat layanan sehat).'; $messageType = 'success';
+        $message = 'User RADIUS dihapus dari tabel autentikasi. Pemutusan sesi aktif masuk antrean scheduler (bertahap mengikuti jumlah antrean).'; $messageType = 'success';
       }
     }
   }

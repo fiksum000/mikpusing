@@ -36,7 +36,7 @@ function radiusDashboardEscape($value) { return htmlspecialchars((string)$value,
 <?php if ($dashboardError !== '') { ?><div class="bg-warning pd-10"><?= radiusDashboardEscape($dashboardError); ?></div><?php } else { ?>
 <div class="row">
 <?php foreach (array('Pelanggan' => count($users), 'Sesi belum menerima Stop' => $activeCount, 'Pemakaian bulan ini (GiB)' => number_format($usage / 1073741824, 2), 'Invoice belum lunas' => $unpaid, 'Pelanggan isolir' => $isolated) as $label => $value) { ?>
-<div class="col-md-4"><div class="card bg-info"><div class="card-body"><h3><?= radiusDashboardEscape($value); ?></h3><?= radiusDashboardEscape($label); ?></div></div></div>
+<div class="col-4"><div class="card bg-info"><div class="card-body"><h3><?= radiusDashboardEscape($value); ?></h3><?= radiusDashboardEscape($label); ?></div></div></div>
 <?php } ?></div><?php } ?>
 <p>Server ini mengelola satu NAS. Data sesi berasal dari accounting RADIUS; sesi tanpa Stop dapat sudah terputus. Periksa waktu update terakhir.</p>
 <p>Isolir berlaku setelah jatuh tempo + 5 hari. Setelah pembayaran, scheduler memulihkan paket sesuai FUP dan meminta koneksi ulang melalui UDP 1700.</p>

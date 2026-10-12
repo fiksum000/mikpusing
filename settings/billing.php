@@ -47,10 +47,11 @@ try {
 }
 $billingSession = 'RADIUS';
 $billingIdentity = 'FreeRADIUS';
+$activeNames = array_fill_keys(array_column($secrets, 'name'), true);
 $allCustomers = customerSyncSecrets($secrets, $billingSession);
 $customers = array();
 foreach (customerReadAll() as $customer) {
-  if ((string)($customer['router_session'] ?? '') === $billingSession) $customers[] = $customer;
+  if ((string)($customer['router_session'] ?? '') === $billingSession && isset($activeNames[(string)($customer['username'] ?? '')])) $customers[] = $customer;
 }
 if ($billingPostValid && isset($_POST['generate_billing'])) {
   try {
@@ -157,7 +158,7 @@ if ($billingPostValid && isset($_POST['update_customer'])) {
   $billingMessage = $updated ? 'Data pelanggan ' . htmlspecialchars($username, ENT_QUOTES, 'UTF-8') . ' berhasil diperbarui.' : 'Pelanggan tidak ditemukan untuk router/backend ini.';
   $billingType = $updated ? 'success' : 'danger';
   $customers = array();
-  foreach (customerReadAll() as $customer) if ((string)($customer['router_session'] ?? '') === $billingSession) $customers[] = $customer;
+  foreach (customerReadAll() as $customer) if ((string)($customer['router_session'] ?? '') === $billingSession && isset($activeNames[(string)($customer['username'] ?? '')])) $customers[] = $customer;
 }
 $invoices = array_reverse(billingReadInvoices());
 $billingQuery = trim((string)($_GET['q'] ?? ''));

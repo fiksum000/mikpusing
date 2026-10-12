@@ -13,6 +13,28 @@ $radius = new RadiusClient();
 $username = 'ci-radius-user';
 try {
     $radius->upsertUser($username, 'ci-test-password', 'PPPOE-10M');
+    // Exercise the installed daemon over localhost UDP, using its stock loopback test client.
+    $packet = function($kind, $payload, $expected) {
+        $pipes = array();
+        $process = proc_open(array('/usr/bin/radclient','-x','-r','1','-t','3','127.0.0.1', $kind, 'testing123'), array(0=>array('pipe','r'),1=>array('pipe','w'),2=>array('pipe','w')), $pipes);
+        if (!is_resource($process)) throw new RuntimeException('Cannot start test radclient');
+        fwrite($pipes[0], $payload); fclose($pipes[0]);
+        $output = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
+        fclose($pipes[1]); fclose($pipes[2]); proc_close($process);
+        verifyRadius(strpos($output, $expected) !== false, 'daemon UDP ' . $expected);
+        return $output;
+    };
+    $auth = 'User-Name = "ci-radius-user"' . "\n" . 'User-Password = "ci-test-password"' . "\nMessage-Authenticator = 0x00000000000000000000000000000000\nNAS-IP-Address = 192.0.2.2\n";
+    $reply = $packet('auth', $auth, 'Access-Accept');
+    verifyRadius(strpos($reply, '10M/10M') !== false, 'SQL package rate returned by daemon');
+    $packet('auth', str_replace('ci-test-password', 'wrong-password', $auth), 'Access-Reject');
+    $acct = 'User-Name = "ci-radius-user"' . "\n" . 'Acct-Session-Id = "ci-protocol-session"' . "\nNAS-IP-Address = 192.0.2.2\nNAS-Port = 1\n";
+    $packet('acct', $acct . "Acct-Status-Type = Start\n", 'Accounting-Response');
+    $packet('acct', $acct . "Acct-Status-Type = Interim-Update\nAcct-Session-Time = 10\nAcct-Input-Octets = 1234\nAcct-Output-Octets = 5678\n", 'Accounting-Response');
+    $packet('acct', $acct . "Acct-Status-Type = Stop\nAcct-Session-Time = 20\nAcct-Input-Octets = 2345\nAcct-Output-Octets = 6789\nAcct-Terminate-Cause = User-Request\n", 'Accounting-Response');
+    $record = $radius->db->query("SELECT * FROM radacct WHERE username='ci-radius-user' AND acctsessionid='ci-protocol-session'")->fetch_assoc();
+    verifyRadius($record && $record['acctstoptime'] !== null && (int)$record['acctinputoctets'] === 2345 && (int)$record['acctoutputoctets'] === 6789, 'daemon Start/Interim/Stop persisted to SQL');
+    $radius->db->query("DELETE FROM radacct WHERE username='ci-radius-user' AND acctsessionid='ci-protocol-session'");
     $radius->setProfile($username, 'PPPOE-10M-FUP');
     $rejected = false;
     try { $radius->upsertUser($username, 'must-not-persist', 'NO-SUCH-GROUP'); } catch (RuntimeException $e) { $rejected = true; }
@@ -54,7 +76,7 @@ try {
     try { $radius->sampleAccountingCounters(); } catch (RuntimeException $e) { $rejected = true; }
     verifyRadius($rejected && file_get_contents($tmp) === '{', 'corrupt accounting state preserved for recovery');
 } finally {
-    $radius->db->query("DELETE FROM radacct WHERE acctuniqueid IN ('ci-unique', 'ci-old-unique')");
+    $radius->db->query("DELETE FROM radacct WHERE username='ci-radius-user'");
     $radius->deleteUser($username);
     foreach (array('radcheck','radusergroup') as $table) $radius->db->query("DELETE FROM $table WHERE username LIKE 'ci-import-%'");
     $radius->disconnect();

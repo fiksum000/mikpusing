@@ -107,7 +107,7 @@ foreach ($reminderQueue as $listedInvoice) {
 }
 
 $json = json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-if ($json === false || @file_put_contents($statePath, $json, LOCK_EX) === false) {
+if ($json === false || @file_put_contents($statePath . '.tmp', $json, LOCK_EX) === false || !rename($statePath . '.tmp', $statePath)) {
     fwrite(STDERR, "Gagal menyimpan reminder state; pesan bisa terkirim ulang pada run berikutnya.\n");
     exit(1);
 }
