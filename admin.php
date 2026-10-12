@@ -52,5 +52,4 @@ if ($id === 'login') {
 }
 ?>
 <?php if ($id !== 'login') { ?><script src="js/mikhmon-ui.<?= htmlspecialchars($theme, ENT_QUOTES, 'UTF-8'); ?>.min.js"></script><?php } ?>
-<script src="js/mikhmon.js"></script>
 </div></body></html>

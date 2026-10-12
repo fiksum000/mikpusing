@@ -1,6 +1,6 @@
 # Instal Full RADIUS di CT Proxmox
 
-Target: CT Ubuntu 22.04 LTS, IP LAN tetap, RouterOS v7, satu NAS per CT. Gunakan minimal 2 vCPU/2 GB RAM dan cadangan disk; 4 GB lebih nyaman. App dan FreeRADIUS/MariaDB dipasang pada CT yang sama. RouterOS API tidak dipakai.
+Target: CT Ubuntu 22.04 LTS, IP LAN tetap, RouterOS v7, satu NAS per CT. Untuk target 1000 pelanggan, mulai 4 vCPU/4 GB RAM, SSD dan cadangan disk; ukur kapasitas pada hardware sebenarnya. App dan FreeRADIUS/MariaDB dipasang pada CT yang sama. RouterOS API tidak dipakai.
 
 ## Fresh install
 
@@ -68,4 +68,4 @@ WhatsApp memakai marker terpisah untuk invoice dan kuitansi. Kegagalan callback 
 
 ## Cakupan pengujian
 
-CI memeriksa PHP/shell/JS, logika invoice/FUP, callback HTTP dengan gateway tiruan, instalasi Ubuntu22.04, SQL accounting64-bit, reinstall dan restart. Ini bukan uji LXC Proxmox atau perangkat MikroTik. Satu NAS per CT adalah batas versi ini; jangan gunakan form untuk mengganti NAS saat pelanggan router lain masih aktif.
+CI memeriksa PHP/shell/JS, logika invoice/FUP, callback HTTP dengan gateway tiruan, instalasi Ubuntu 22.04, autentikasi dan accounting UDP ke daemon FreeRADIUS, SQL accounting 64-bit, impor 1000 pelanggan, 4 generator invoice bersamaan, reinstall, backup�restore dan restart. Ini bukan uji LXC Proxmox atau perangkat MikroTik. Satu NAS per CT adalah batas versi ini; jangan gunakan form untuk mengganti NAS saat pelanggan router lain masih aktif.

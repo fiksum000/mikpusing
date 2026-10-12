@@ -10,6 +10,7 @@ def page(route,data=None):
 page('login',{'login':'1','user':credentials[0],'pass':credentials[1]})
 outside=page('sessions')
 nav=outside.split('id="sidenav"',1)[1].split('</div>',1)[0]
+assert 'js/mikhmon.js' not in outside and 'Quick Print' not in outside
 assert 'id=radius-nas' in nav and 'id=billing' not in nav and '> Open' in outside
 for route in ('radius-dashboard','radius-accounting','radius-users','bulk-import','billing','tripay-settings','fonnte','wa-templates','fonnte-log','pppoe-packages','billing-integrations'):
     html=page(route)
