@@ -96,7 +96,7 @@ $radiusSecretFromPost = ''; // Never persist shared secrets in the web configura
         <div class="row">
           <div class="col-md-4 mb-3"><label>Backend autentikasi</label>
             <select class="form-control" name="ppp_auth_backend" id="backendSelect">
-              <option value="routeros" <?= $currentBackend === 'routeros' ? 'selected' : ''; ?>>MikroTik lokal (PPPoE)</option>
+              <option value="routeros" <?= $currentBackend === 'routeros' ? 'selected' : ''; ?>>MikroTik lokal (PPPoE saja)</option>
               <option value="radius" <?= $currentBackend === 'radius' ? 'selected' : ''; ?> <?= !$radiusReady ? 'disabled' : ''; ?>>FreeRADIUS + MariaDB (PPPoE/Hotspot)</option>
             </select>
           </div>
@@ -158,6 +158,20 @@ $radiusSecretFromPost = ''; // Never persist shared secrets in the web configura
     <a href="./admin.php?id=pppoe-packages" class="group-item group-item-md">Atur group paket / FUP / ISOLIR</a>
     <a href="./admin.php?id=radius-users" class="group-item group-item-md">Kelola user RADIUS</a>
     <a href="./admin.php?id=tripay-settings" class="group-item group-item-md">Pengaturan TriPay</a>
+  </div></div>
+
+  <div class="card mt-3"><div class="card-header"><h3 class="card-title">4. Pemeriksaan otomatis setelah setup</h3></div><div class="card-body">
+    <p>Salin perintah ini ke terminal CT untuk memeriksa service, sintaks, cron, dan log terbaru. Perintah hanya membaca status/log; tidak mengubah router atau pelanggan.</p>
+    <pre id="integrationStatusCode" style="white-space:pre-wrap;word-break:break-word;">systemctl --no-pager --full status apache2 mariadb cron freeradius
+php -v
+php -l /var/www/mikhmon/cron/pppoe_profile_automation.php
+php -l /var/www/mikhmon/cron/radius_profile_automation.php
+php /var/www/mikhmon/tests/smoke.php
+tail -n 80 /var/www/mikhmon/storage/pppoe-automation.log
+tail -n 80 /var/www/mikhmon/storage/invoice-generation.log
+tail -n 80 /var/www/mikhmon/storage/radius-accounting.log</pre>
+    <button type="button" class="group-item group-item-md" onclick="copyIntegrationCode('integrationStatusCode')">Salin perintah pemeriksaan</button>
+    <div class="alert bg-warning mt-3"><strong>Catatan mode:</strong> RouterOS lokal di menu ini mengotomatisasi PPPoE lokal. Agar PPPoE dan Hotspot memakai autentikasi, accounting, group isolir/FUP, serta pemulihan yang sama dari satu database, pilih FreeRADIUS + MariaDB. Pada RADIUS, nama user harus unik antara PPPoE dan Hotspot jika keduanya ditagih terpisah.</div>
   </div></div>
 </div></div>
 
