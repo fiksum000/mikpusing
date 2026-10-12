@@ -129,6 +129,91 @@ EOF
 chown root:www-data /etc/mikhmon/radius.php
 chmod 0640 /etc/mikhmon/radius.php
 
+# Make sure the standard virtual server actually calls SQL for authentication,
+# accounting and post-auth. Enabling mods-available/sql alone is not sufficient.
+DEFAULT_SITE="/etc/freeradius/3.0/sites-available/default"
+if [[ ! -r "$DEFAULT_SITE" ]]; then echo "Virtual server default tidak ditemukan." >&2; exit 1; fi
+cp -a "$DEFAULT_SITE" "${DEFAULT_SITE}.bak.$(date +%Y%m%d%H%M%S)"
+export DEFAULT_SITE
+python3 <<'PY'
+import os, re
+path = os.environ['DEFAULT_SITE']
+with open(path, encoding='utf-8') as f: lines = f.readlines()
+
+def block_span(name):
+    pat = re.compile(r'^\s*' + re.escape(name) + r'\s*\{')
+    start = next((i for i, line in enumerate(lines) if pat.match(line) and not line.lstrip().startswith('#')), None)
+    if start is None: raise SystemExit('Section ' + name + ' tidak ditemukan di sites-available/default.')
+    depth = 0
+    for i in range(start, len(lines)):
+        body = lines[i].split('#', 1)[0]
+        depth += body.count('{') - body.count('}')
+        if i > start and depth == 0: return start, i
+    raise SystemExit('Kurung kurawal section ' + name + ' tidak seimbang.')
+
+for section in ('authorize', 'accounting', 'post-auth'):
+    start, end = block_span(section)
+    current = lines[start + 1:end]
+    if any(re.match(r'^\s*-?sql\s*(?:#.*)?
+systemctl enable --now freeradius
+systemctl restart freeradius
+if ! systemctl is-active --quiet freeradius; then
+  journalctl -u freeradius -n 80 --no-pager >&2
+  echo "FreeRADIUS gagal aktif; jangan arahkan pelanggan ke server sebelum diperbaiki." >&2
+  exit 1
+fi
+
+cat > /root/mikpusing-radius-credentials.txt <<EOF
+FreeRADIUS / MariaDB credentials (keep secret)
+RADIUS_DB_HOST=127.0.0.1
+RADIUS_DB_NAME=${RADIUS_DB_NAME}
+RADIUS_DB_USER=${RADIUS_DB_USER}
+RADIUS_DB_PASSWORD=${RADIUS_DB_PASSWORD}
+RADIUS_NAS_IP=${RADIUS_NAS_IP}
+RADIUS_SERVER_IP=${RADIUS_SERVER_IP}
+RADIUS_CLIENT_SECRET=${RADIUS_CLIENT_SECRET}
+
+RouterOS commands (review address/service before applying):
+/radius add address=${RADIUS_SERVER_IP} service=ppp,hotspot secret=${RADIUS_CLIENT_SECRET} authentication-port=1812 accounting-port=1813 timeout=1s
+/ppp aaa set use-radius=yes accounting=yes interim-update=5m
+/ip hotspot profile set [find] use-radius=yes radius-accounting=yes radius-interim-update=5m
+
+IMPORTANT:
+- Restrict UDP 1812/1813 to router IP ${RADIUS_NAS_IP} at host and Proxmox firewalls.
+- Keep an existing local break-glass admin user; do not remove local router users until a RADIUS test succeeds.
+- Import example groups from db/radius-mikrotik-groups.example.sql and create users in Mikhmon > User RADIUS.
+- Existing RouterOS local secrets/hotspot users are not automatically migrated into SQL.
+EOF
+chmod 0600 /root/mikpusing-radius-credentials.txt
+
+cat > /etc/cron.d/mikhmon-radius <<EOF
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+*/5 * * * * www-data cd ${APP_DIR} && /usr/bin/php cron/radius-accounting-snapshot.php >> storage/radius-accounting.log 2>&1
+EOF
+chmod 0644 /etc/cron.d/mikhmon-radius
+
+cat <<EOF
+FreeRADIUS aktif dan konfigurasi database dibuat.
+Kredensial privat: /root/mikpusing-radius-credentials.txt
+RADIUS host: ${RADIUS_SERVER_IP}
+Router NAS IP yang diizinkan: ${RADIUS_NAS_IP}
+Group contoh perlu diimpor, lalu buat user tes sebelum mengaktifkan RADIUS produksi.
+Jangan ubah semua router/user sekaligus tanpa tes login lokal + RADIUS.
+EOF
+, line) for line in current if not line.lstrip().startswith('#')):
+        continue
+    # In authorize, SQL must run before PAP so the user password is available.
+    insert_at = end
+    if section == 'authorize':
+        pap = next((i for i in range(start + 1, end) if re.match(r'^\s*(?:-?pap)\b', lines[i]) and not lines[i].lstrip().startswith('#')), None)
+        if pap is not None: insert_at = pap
+    indent = re.match(r'^(\s*)', lines[start]).group(1) + '    '
+    lines.insert(insert_at, indent + 'sql\n')
+
+with open(path, 'w', encoding='utf-8') as f: f.writelines(lines)
+PY
+
 freeradius -XC
 systemctl enable --now freeradius
 systemctl restart freeradius
