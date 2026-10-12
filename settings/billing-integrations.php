@@ -116,6 +116,7 @@ $radiusSecretFromPost = ''; // Never persist shared secrets in the web configura
       <div class="mb-3">
         <span class="badge <?= $currentBackend === 'radius' ? 'bg-success' : 'bg-info'; ?>">Backend saat ini: <?= strtoupper(htmlspecialchars($currentBackend, ENT_QUOTES, 'UTF-8')); ?></span>
         <span class="badge <?= $radiusReady ? 'bg-success' : 'bg-warning'; ?>">FreeRADIUS <?= $radiusReady ? 'terkonfigurasi' : 'belum terpasang/konfigurasi'; ?></span>
+        <span class="badge <?= $tripayReady ? 'bg-success' : 'bg-warning'; ?>">TriPay <?= $tripayReady ? 'terkonfigurasi' : 'belum terkonfigurasi'; ?></span>
       </div>
       <form method="post" action="./admin.php?id=billing-integrations" class="mb-4">
         <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8'); ?>"/>
@@ -143,6 +144,18 @@ $radiusSecretFromPost = ''; // Never persist shared secrets in the web configura
           <div class="col-md-6 mb-3"><label>Harga default bulanan (Rp)</label>
             <input class="form-control" type="number" min="0" step="1000" name="default_monthly_amount" value="<?= (int)($settings['default_monthly_amount'] ?? 0); ?>"/>
             <small class="text-muted">Dipakai scheduler invoice harian sebagai harga cadangan. Nilai 0 berarti invoice tidak dibuat otomatis dan pelanggan tidak diisolir karena invoice yang tidak ada.</small>
+          </div>
+          <div class="col-md-6 mb-3"><label>URL publik Billing (wajib untuk callback otomatis)</label>
+            <input class="form-control" type="url" name="public_base_url" placeholder="https://billing.domainkamu.id" value="<?= htmlspecialchars((string)($settings['public_base_url'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"/>
+            <small class="text-muted">Gunakan URL yang bisa diakses TriPay dari internet, idealnya HTTPS. Jangan gunakan IP privat/LAN untuk callback produksi.</small>
+          </div>
+          <div class="col-md-6 mb-3"><label>Metode pembayaran otomatis (TriPay)</label>
+            <select class="form-control" name="default_payment_method">
+              <?php $paymentMethods = array('' => 'Nonaktif — buat link manual dari Billing', 'QRIS' => 'QRIS', 'DANA' => 'DANA', 'OVO' => 'OVO', 'SHOPEEPAY' => 'ShopeePay', 'BCAVA' => 'VA BCA', 'BRIVA' => 'VA BRI', 'MANDIRIVA' => 'VA Mandiri', 'ALFAMART' => 'Alfamart', 'INDOMARET' => 'Indomaret'); foreach ($paymentMethods as $code => $label) { ?>
+              <option value="<?= htmlspecialchars($code, ENT_QUOTES, 'UTF-8'); ?>" <?= (string)($settings['default_payment_method'] ?? '') === $code ? 'selected' : ''; ?>><?= htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?></option>
+              <?php } ?>
+            </select>
+            <small class="text-muted">Pilih metode yang aktif pada akun TriPay kamu. Cron akan membuat checkout dan mengirim link melalui WhatsApp setelah invoice dibuat.</small>
           </div>
         </div>
         <button class="group-item group-item-md" type="submit" name="save_integration_settings">Simpan pengaturan integrasi</button>
