@@ -64,7 +64,7 @@ import os, re
 path = os.environ['SQLCONF']
 values = {
     'dialect': '"mysql"',
-    'server': '"127.0.0.1"',
+    'server': '"localhost"',
     'port': '3306',
     'login': '"' + os.environ['RADIUS_DB_USER'] + '"',
     'password': '"' + os.environ['RADIUS_DB_PASSWORD'] + '"',
@@ -116,7 +116,7 @@ cat > /etc/mikhmon/radius.php <<EOF
 <?php
 // Protected local config; permissions root:www-data 0640. Do not commit this file.
 return array(
-  'db_host' => '127.0.0.1',
+  'db_host' => 'localhost',
   'db_user' => '${RADIUS_DB_USER}',
   'db_password' => '${RADIUS_DB_PASSWORD}',
   'db_name' => '${RADIUS_DB_NAME}',
