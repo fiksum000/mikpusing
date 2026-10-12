@@ -162,6 +162,37 @@ EOF
 chown root:www-data /etc/mikhmon/radius.php
 chmod 0640 /etc/mikhmon/radius.php
 
+# Set the application backend to Full RADIUS while preserving TriPay/WhatsApp settings.
+SETTINGS_FILE="${APP_DIR}/storage/integration_settings.json"
+install -d -o www-data -g www-data -m 0750 "${APP_DIR}/storage"
+export SETTINGS_FILE
+python3 <<'PY'
+import json, os
+from datetime import datetime
+from pathlib import Path
+
+path = Path(os.environ["SETTINGS_FILE"])
+try:
+    settings = json.loads(path.read_text()) if path.exists() else {}
+except Exception:
+    settings = {}
+if not isinstance(settings, dict):
+    settings = {}
+settings.update({
+    "ppp_auth_backend": "radius",
+    "radius_server_ip": os.environ["RADIUS_SERVER_IP"],
+    "radius_nas_ip": os.environ["RADIUS_NAS_IP"],
+    "portal_ip": settings.get("portal_ip") or os.environ["RADIUS_SERVER_IP"],
+    "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+})
+tmp = path.with_suffix(".json.tmp")
+tmp.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\\n")
+os.chmod(tmp, 0o640)
+tmp.replace(path)
+PY
+chown www-data:www-data "${SETTINGS_FILE}"
+chmod 0640 "${SETTINGS_FILE}"
+
 # Enable SQL in the actual virtual server, not just mods-enabled.
 cp -a "$DEFAULT_SITE" "${DEFAULT_SITE}.bak.$(date +%Y%m%d%H%M%S)"
 export DEFAULT_SITE
