@@ -16,7 +16,7 @@ date_default_timezone_set(getenv('TZ') ?: 'Asia/Jakarta');
 $apply = in_array('--apply', $argv, true);
 $period = date('Y-m'); $today = (int)date('j'); $daysInMonth = (int)date('t');
 $config = pppoePackageRead();
-$isolir = trim((string)($config['isolir_profile'] ?? 'ISOLIR'));
+$isolir = 'ISOLIR'; // Must match db/radius-mikrotik-groups.example.sql and Mikrotik-Address-List policy.
 $packageByProfile = array();
 foreach ((array)($config['packages'] ?? array()) as $package) {
     foreach (array('normal_profile', 'fup_profile') as $field) {
