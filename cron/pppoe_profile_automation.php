@@ -70,6 +70,19 @@ function mikhmonRouterCredentials($sessionData) {
     return array($host, $port, $user, decrypt($password));
 }
 
+function mikhmonKickPppOnly($api, $username) {
+    $result = array('kicked' => 0, 'errors' => 0);
+    $rows = $api->comm('/ppp/active/print', array('?name' => (string)$username));
+    if (!is_array($rows) || isset($rows['!trap'])) return array('kicked' => 0, 'errors' => 1);
+    foreach ($rows as $row) {
+        if (empty($row['.id'])) continue;
+        $removed = $api->comm('/ppp/active/remove', array('.id' => $row['.id']));
+        if (is_array($removed) && isset($removed['!trap'])) $result['errors']++;
+        else $result['kicked']++;
+    }
+    return $result;
+}
+
 function mikhmonQueueBytesForSecret($queues, $secret) {
     $username = (string)($secret['name'] ?? '');
     $remote = trim((string)($secret['remote-address'] ?? ''));
