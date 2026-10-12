@@ -1,5 +1,4 @@
 <?php
-include_once(__DIR__ . '/wa_templates.php');
 if (!function_exists('billingPath')) {
   function billingPath() { return __DIR__ . '/../storage/invoices.json'; }
   function billingEnsureStorage() {
@@ -84,14 +83,6 @@ if (!function_exists('billingPath')) {
         'proof_url' => '', 'created_at' => date('Y-m-d H:i:s'), 'paid_at' => ''
       );
       $invoices[] = $newInvoice;
-      if ($newInvoice['customer_phone'] !== '' && function_exists('fonnteSendMessage')) {
-        $message = waTemplateRender('invoice', array(
-          'nama' => $newInvoice['customer_name'], 'invoice' => $invoiceNo,
-          'periode' => $period, 'total' => 'Rp' . number_format($amount, 0, ',', '.'),
-          'jatuh_tempo' => $dueDate, 'link_bayar' => 'Hubungi admin untuk tautan pembayaran.'
-        ));
-        fonnteSendMessage($newInvoice['customer_phone'], $message, array('event' => 'invoice', 'invoice' => $invoiceNo));
-      }
       $existing[$invoiceNo] = $newInvoice; $created++;
     }
     if (!billingWriteInvoices($invoices)) throw new RuntimeException('Gagal menulis storage/invoices.json.');
