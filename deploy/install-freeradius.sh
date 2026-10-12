@@ -56,6 +56,9 @@ FLUSH PRIVILEGES;
 SQL
 
 mysql --protocol=socket "${RADIUS_DB_NAME}" < "$SCHEMA"
+if [[ -f "${APP_DIR}/db/radius-mikrotik-groups.example.sql" ]]; then
+  mysql --protocol=socket "${RADIUS_DB_NAME}" < "${APP_DIR}/db/radius-mikrotik-groups.example.sql"
+fi
 
 cp -a "$SQLCONF" "${SQLCONF}.bak.$(date +%Y%m%d%H%M%S)"
 export SQLCONF
