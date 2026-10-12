@@ -7,8 +7,8 @@ require_once('./include/tripay.php');
 $settingsPath = __DIR__ . '/../storage/integration_settings.json';
 $settings = mikhmonIntegrationSettings();
 $baseRadius = mikhmonRadiusBaseConfig();
-$currentBackend = strtolower((string)($settings['ppp_auth_backend'] ?? ($baseRadius['ppp_auth_backend'] ?? 'radius')));
-if (!in_array($currentBackend, array('routeros','radius'), true)) $currentBackend = 'radius';
+// Ignore stale RouterOS/API values left by earlier installations.
+$currentBackend = 'radius';
 $settings = array_merge(array(
   'ppp_auth_backend' => $currentBackend,
   'radius_server_ip' => '',
@@ -53,7 +53,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_integration_sett
     $message = 'Permintaan ditolak karena token keamanan tidak cocok. Muat ulang halaman.'; $messageType = 'danger';
   } else {
     // Full RADIUS is the only supported billing backend in this setup.
-    $backend = $radiusReady ? 'radius' : $currentBackend;
+    // Never persist or advertise RouterOS API as a billing fallback.
+    $backend = 'radius';
     $radiusServerIp = trim((string)($_POST['radius_server_ip'] ?? ''));
     $radiusNasIp = trim((string)($_POST['radius_nas_ip'] ?? ''));
     $portalIp = trim((string)($_POST['portal_ip'] ?? ''));
