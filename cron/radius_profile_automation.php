@@ -7,7 +7,9 @@
  * Default is DRY RUN; pass --apply to change radusergroup.
  */
 if (PHP_SAPI !== 'cli') { http_response_code(403); exit("CLI only\n"); }
+require_once __DIR__ . '/../include/config.php';
 require_once __DIR__ . '/../lib/free_radius_client.php';
+require_once __DIR__ . '/../lib/routeros_session_control.php';
 require_once __DIR__ . '/../include/customers.php';
 require_once __DIR__ . '/../include/billing.php';
 require_once __DIR__ . '/../include/pppoe_packages.php';
@@ -38,6 +40,7 @@ $log = function($message) use ($logPath) {
 };
 $errors = 0; $changed = 0; $skipped = 0; $managed = 0;
 $radius = null;
+$routerSessionController = new MikhmonRouterSessionController(isset($data) && is_array($data) ? $data : array());
 try {
     $radius = new RadiusClient();
     $users = $radius->listUsers();
@@ -80,12 +83,18 @@ try {
         if (!$apply) { echo $message . PHP_EOL; continue; }
         try {
             $radius->setProfile($username, $target);
-            $changed++; $log($message . ' note=existing_sessions_may_need_reauth');
+            $kicked = $routerSessionController->disconnectSubscriber($username);
+            $changed++;
+            $log($message . ' sessions_kicked_ppp=' . $kicked['ppp'] . ' sessions_kicked_hotspot=' . $kicked['hotspot'] . ' routers_checked=' . $kicked['routers_checked'] . ' kick_errors=' . $kicked['errors']);
+            if ($kicked['routers_checked'] < 1) {
+                $log("WARN backend=radius user={$username} profile_changed_but_no_router_api_reachable; existing session may retain old policy until reconnect");
+            }
         } catch (Throwable $e) {
             $errors++; $log("ERROR " . $message . " reason=" . preg_replace('/\s+/', ' ', $e->getMessage()));
         }
     }
     $radius->disconnect();
+    $routerSessionController->closeAll();
 } catch (Throwable $e) {
     if ($radius instanceof RadiusClient) $radius->disconnect();
     fwrite(STDERR, date('c') . ' RADIUS automation FAILED: ' . preg_replace('/\s+/', ' ', $e->getMessage()) . PHP_EOL);
