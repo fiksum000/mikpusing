@@ -36,7 +36,7 @@ RADIUS_NAS_IP=192.0.2.2 RADIUS_SERVER_IP=192.0.2.10 ./deploy/install-freeradius.
 
 Installer membuat password MariaDB dan shared secret RADIUS yang acak, mengimpor schema FreeRADIUS paket Ubuntu, menyiapkan group contoh, serta menaruh kredensial di `/root/mikpusing-radius-credentials.txt` dengan mode 0600. File terlindungi `/etc/mikhmon/radius.php` menyimpan konfigurasi DM untuk scheduler. Jika file itu sudah ada, installer berhenti tanpa mengganti secret; ini mencegah koneksi putus jika perintah ditempel dua kali.
 
-Setelah instalasi RADIUS berhasil, kembali ke **Billing & Integrasi**, pilih backend **FreeRADIUS + MariaDB**, lalu klik **Simpan pengaturan integrasi**. Pilihan ini membuat scheduler Billing menggunakan group RADIUS; memasang service saja tidak otomatis mengganti mode aplikasi.
+Setelah instalasi RADIUS berhasil, buka **Billing & Integrasi** untuk memeriksa status FreeRADIUS dan simpan IP server, IP sumber NAS, IP portal, harga default, URL publik, serta metode TriPay jika diperlukan. Backend tidak perlu dipilih: alur billing dan scheduler pada branch Full RADIUS ditetapkan ke RADIUS dan tidak menyediakan fallback RouterOS API.
 
 **Jangan matikan atau hapus akun lokal router.** Import user lokal PPPoE/Hotspot ke RADIUS harus dilakukan secara terencana. Dalam mode Full RADIUS, kamu tidak perlu menambahkan router melalui halaman API Mikhmon untuk menjalankan scheduler billing; konfigurasi NAS dan firewall dilakukan sekali melalui Terminal RouterOS.
 
