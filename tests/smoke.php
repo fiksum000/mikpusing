@@ -4,6 +4,7 @@ date_default_timezone_set('Asia/Jakarta');
 require_once __DIR__ . '/../include/billing.php';
 require_once __DIR__ . '/../include/pppoe_usage.php';
 require_once __DIR__ . '/../include/pppoe_packages.php';
+require_once __DIR__ . '/../include/customers.php';
 require_once __DIR__ . '/../lib/free_radius_client.php';
 require_once __DIR__ . '/../lib/decrypt_helper.php';
 
@@ -139,6 +140,26 @@ try {
     $fupPackage = pppoePackageForProfile('PPPOE-10M-FUP');
     assertMikpusing(is_array($normalPackage) && $normalPackage['normal_profile'] === 'PPPOE-10M', 'normal profile resolves to package mapping');
     assertMikpusing(is_array($fupPackage) && $fupPackage['normal_profile'] === 'PPPOE-10M', 'FUP profile resolves to its normal package for restoration');
+
+    $originalCustomersEnv = getenv('MIKHMON_CUSTOMERS_FILE');
+    $customerTestDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'mikpusing-customer-smoke-' . getmypid() . '-' . bin2hex(random_bytes(4));
+    assertMikpusing(@mkdir($customerTestDir, 0700, true), 'temporary customer test directory is created');
+    $customerTestPath = $customerTestDir . DIRECTORY_SEPARATOR . 'customers.json';
+    putenv('MIKHMON_CUSTOMERS_FILE=' . $customerTestPath);
+    try {
+        customerSyncSecrets(array(array('name' => 'radius-fup-test', 'profile' => 'PPPOE-10M')), 'RADIUS');
+        assertMikpusing(customerUpdate('radius-fup-test', array('amount' => 35000, 'phone' => '628123456789'), 'RADIUS'), 'customer price and phone can be updated');
+        customerSyncSecrets(array(array('name' => 'radius-fup-test', 'profile' => 'PPPOE-10M-FUP')), 'RADIUS');
+        $syncedCustomer = customerFind('radius-fup-test', 'RADIUS');
+        assertMikpusing(($syncedCustomer['normal_profile'] ?? '') === 'PPPOE-10M', 'RADIUS sync preserves normal profile while subscriber is on FUP');
+        assertMikpusing((int)($syncedCustomer['amount'] ?? 0) === 35000, 'RADIUS sync preserves customer price');
+        assertMikpusing(($syncedCustomer['phone'] ?? '') === '628123456789', 'RADIUS sync preserves customer WhatsApp number');
+        assertMikpusing(($syncedCustomer['profile'] ?? '') === 'PPPOE-10M-FUP', 'RADIUS sync still records current FUP group');
+    } finally {
+        putenv($originalCustomersEnv === false ? 'MIKHMON_CUSTOMERS_FILE' : 'MIKHMON_CUSTOMERS_FILE=' . $originalCustomersEnv);
+        foreach (glob($customerTestPath . '*') ?: array() as $customerTestFile) @unlink($customerTestFile);
+        @rmdir($customerTestDir);
+    }
 } finally {
     if ($packageExisted) file_put_contents($packagePath, $packageBackup, LOCK_EX);
     elseif (is_file($packagePath)) unlink($packagePath);
