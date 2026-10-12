@@ -29,7 +29,22 @@ Buka `http://IP-CT/`, lalu login dengan username `admin` dan password dari file 
 - Network bridge Proxmox seperti `vmbr0` dan IP yang bisa dijangkau dari LAN
 - Koneksi keluar internet untuk pemasangan paket
 
-Installer memasang Apache, PHP 8.2, MariaDB, cron, membuat virtual host, dan menambahkan scheduler Mikhmon. Tambahkan koneksi MikroTik dari panel setelah login.
+Installer memasang Apache, PHP 8.2, MariaDB, cron, halaman isolir HTTP pada port 8081, serta penjadwalan profil setiap 5 menit. Tambahkan koneksi MikroTik dari panel setelah login.
+
+## FreeRADIUS, billing otomatis, dan isolir
+
+Untuk autentikasi terpusat PPPoE + Hotspot, accounting, group paket, FUP, halaman isolir, serta pemulihan otomatis setelah pembayaran, ikuti panduan khusus:
+
+[**Panduan MikroTik RADIUS + halaman isolir**](deploy/README-RADIUS.md)
+
+Alur isolir menggunakan group RADIUS `ISOLIR` dengan address-list `MIKPUSING-ISOLIR`. Setelah memasukkan router di Mikhmon, dry-run dahulu konfigurasi redirect, kemudian terapkan dengan IP CT yang benar:
+
+```bash
+php deploy/configure-isolir-routeros.php --portal-ip IP_LAN_CT
+php deploy/configure-isolir-routeros.php --portal-ip IP_LAN_CT --apply
+```
+
+Profil diperiksa setiap 5 menit. Pemulihan setelah pembayaran terkonfirmasi ditargetkan jauh di bawah 20 menit selama callback diterima, FreeRADIUS aktif, serta RouterOS API dapat dijangkau. Redirect halaman berlaku untuk HTTP; HTTPS tidak dapat dialihkan transparan ke halaman HTTP tanpa error TLS. Untuk pelanggan PPPoE dan Hotspot, tambahkan seluruh group normal/FUP dalam menu `Profile PPPoE & FUP`.
 
 ## Keamanan
 
