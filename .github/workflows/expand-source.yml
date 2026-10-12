@@ -1,0 +1,66 @@
+name: Expand Mikhmon source bundle
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mikpusing-source.zip'
+
+permissions:
+  contents: write
+
+jobs:
+  expand-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Validate archive
+        run: |
+          python3 - <<'PY'
+          from pathlib import PurePosixPath
+          from zipfile import ZipFile
+          import stat
+
+          archive = "mikpusing-source.zip"
+          with ZipFile(archive) as z:
+              for info in z.infolist():
+                  name = info.filename
+                  path = PurePosixPath(name)
+                  if path.is_absolute() or ".." in path.parts:
+                      raise SystemExit(f"Unsafe path in archive: {name}")
+                  if ".git" in path.parts:
+                      raise SystemExit("Git metadata is not allowed in the source bundle")
+                  if name in {"config.php", "include/config.php"}:
+                      raise SystemExit(f"Local secret configuration is not allowed: {name}")
+                  if name.startswith("storage/") and name.endswith((".json", ".log", ".tar.gz", ".zip")):
+                      raise SystemExit(f"Runtime data is not allowed in the source bundle: {name}")
+                  mode = info.external_attr >> 16
+                  if stat.S_ISLNK(mode):
+                      raise SystemExit(f"Symlinks are not allowed in the source bundle: {name}")
+              required = {"admin.php", "deploy/install-ubuntu22.sh", "README.md"}
+              names = set(z.namelist())
+              missing = required - names
+              if missing:
+                  raise SystemExit(f"Archive is missing required files: {sorted(missing)}")
+          PY
+
+      - name: Expand source into repository root
+        run: |
+          mkdir -p /tmp/mikpusing-source
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          with ZipFile("mikpusing-source.zip") as z:
+              z.extractall("/tmp/mikpusing-source")
+          PY
+          rsync -a --exclude='.git/' /tmp/mikpusing-source/ ./
+          rm -f mikpusing-source.zip
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Expand Mikhmon source for Proxmox CT"
+            git push origin HEAD:main
+          fi
