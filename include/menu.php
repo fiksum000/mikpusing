@@ -139,15 +139,15 @@ if (!isset($_SESSION["mikhmon"])) {
   } elseif ($hotspot == "about") {
     $mpage = $_about;
     $sabout = "active";
-  } elseif ($id == "sessions" || $id == "remove" || $router == "new") {
+  } elseif ($id == "sessions" || $id == "remove") {
     $ssesslist = "active";
     $mpage = $_admin_settings;
-  } elseif ($id == "settings" && $session == "new") {
+  } elseif ($id == "radius-nas") {
     $snsettings = "active";
-    $mpage = $_add_router;
+    $mpage = "Add Router — RADIUS NAS";
   } elseif ($id == "settings" || $id == "connect") {
     $ssettings = "active";
-    $mpage = $_session_settings;
+    $mpage = "Add Router — RADIUS NAS";
   } elseif ($id == "fonnte") {
     $sfonnte = "active";
     $mpage = "WhatsApp Fonnte";
@@ -245,7 +245,7 @@ if($idleto != "disable"){
   <a href="./admin.php?id=billing-integrations" class="menu <?= $id == "billing-integrations" ? "active" : ""; ?>"><i class="fa fa-plug"></i> Integrasi Billing / MikroTik / RADIUS</a>
   <a href="./admin.php?id=tripay-settings" class="menu <?= $stripaySettings; ?>"><i class="fa fa-credit-card"></i> Pengaturan TriPay</a>
   <a href="./admin.php?id=pppoe-packages" class="menu <?= $spppoePackages; ?>"><i class="fa fa-sliders"></i> Profile PPPoE & FUP</a>
-  <a href="./admin.php?id=settings&router=new-<?= rand(1111,9999) ?>" class="menu <?= $snsettings ?>"><i class="fa fa-plus"></i> <?= $_add_router ?></a>
+  <a href="./admin.php?id=radius-nas" class="menu <?= $id == "radius-nas" ? "active" : ""; ?>"><i class="fa fa-plus"></i> Add Router — RADIUS NAS</a>
   <a href="./admin.php?id=about" class="menu <?= $sabout; ?>"><i class="fa fa-info-circle"></i> <?= $_about ?></a>
 
 </div>
