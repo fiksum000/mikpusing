@@ -23,6 +23,8 @@ jobs:
         run: |
           set -o pipefail
           find . -type f -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l
+      - name: Run pure PHP regression smoke tests
+        run: php tests/smoke.php
 
   shell-lint:
     runs-on: ubuntu-latest
