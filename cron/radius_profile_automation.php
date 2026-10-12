@@ -1,10 +1,8 @@
 <?php
 /**
- * FreeRADIUS-backed PPPoE profile automation.
- *
- * Only users assigned to one of the configured PPPoE package groups are managed.
- * Hotspot users should use their own groups and are intentionally ignored.
- * Default is DRY RUN; pass --apply to change radusergroup.
+ * FreeRADIUS-backed PPPoE and Hotspot profile automation.
+ * Manage every group configured in the package mapping. Default is DRY RUN;
+ * pass --apply to change radusergroup and reauthenticate active RouterOS sessions.
  */
 if (PHP_SAPI !== 'cli') { http_response_code(403); exit("CLI only\n"); }
 require_once __DIR__ . '/../include/config.php';
@@ -40,6 +38,12 @@ $log = function($message) use ($logPath) {
 };
 $errors = 0; $changed = 0; $skipped = 0; $managed = 0;
 $radius = null;
+$pendingPath = __DIR__ . '/../storage/radius-kick-pending.json';
+$pending = array();
+if (is_file($pendingPath)) {
+    $storedPending = json_decode(@file_get_contents($pendingPath) ?: '{}', true);
+    if (is_array($storedPending)) $pending = $storedPending;
+}
 $routerSessionController = new MikhmonRouterSessionController(isset($data) && is_array($data) ? $data : array());
 try {
     $radius = new RadiusClient();
@@ -83,14 +87,34 @@ try {
         if (!$apply) { echo $message . PHP_EOL; continue; }
         try {
             $radius->setProfile($username, $target);
+            $pending[$username] = array('target' => $target, 'requested_at' => date('c'));
             $kicked = $routerSessionController->disconnectSubscriber($username);
             $changed++;
             $log($message . ' sessions_kicked_ppp=' . $kicked['ppp'] . ' sessions_kicked_hotspot=' . $kicked['hotspot'] . ' routers_checked=' . $kicked['routers_checked'] . ' kick_errors=' . $kicked['errors']);
-            if ($kicked['routers_checked'] < 1) {
-                $log("WARN backend=radius user={$username} profile_changed_but_no_router_api_reachable; existing session may retain old policy until reconnect");
+            if ($kicked['routers_checked'] > 0 && $kicked['errors'] === 0) {
+                unset($pending[$username]);
+            } else {
+                $log("WARN backend=radius user={$username} session_kick_pending; the next five-minute run will retry until a router API responds");
             }
         } catch (Throwable $e) {
             $errors++; $log("ERROR " . $message . " reason=" . preg_replace('/\s+/', ' ', $e->getMessage()));
+        }
+    }
+    // Retry session changes that previously could not reach a RouterOS API.
+    if ($apply && count($pending) > 0) {
+        foreach (array_keys($pending) as $pendingUser) {
+            $kicked = $routerSessionController->disconnectSubscriber((string)$pendingUser);
+            if ($kicked['routers_checked'] > 0 && $kicked['errors'] === 0) {
+                unset($pending[$pendingUser]);
+                $log("RECOVERED backend=radius user={$pendingUser} pending_session_kick_completed ppp={$kicked['ppp']} hotspot={$kicked['hotspot']}");
+            } else {
+                $log("WARN backend=radius user={$pendingUser} session_kick_still_pending routers_checked={$kicked['routers_checked']} errors={$kicked['errors']}");
+            }
+        }
+        $pendingJson = json_encode($pending, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        if ($pendingJson === false || @file_put_contents($pendingPath, $pendingJson, LOCK_EX) === false) {
+            $errors++;
+            $log("ERROR unable_to_save_session_kick_pending_queue");
         }
     }
     $radius->disconnect();
