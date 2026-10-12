@@ -4,6 +4,7 @@ date_default_timezone_set('Asia/Jakarta');
 require_once __DIR__ . '/../include/billing.php';
 require_once __DIR__ . '/../include/pppoe_usage.php';
 require_once __DIR__ . '/../include/pppoe_packages.php';
+require_once __DIR__ . '/../lib/free_radius_client.php';
 
 function assertMikpusing($condition, $message) {
     if (!$condition) {
@@ -19,6 +20,10 @@ assertMikpusing(billingDueDate('2025-02', 31) === '2025-02-28', 'February non-le
 assertMikpusing(billingDueDate('2024-02', 31) === '2024-02-29', 'leap-year due date clamps to February 29');
 assertMikpusing(billingDueDate('2026-04', 31) === '2026-04-30', '30-day month due date clamps to the last day');
 assertMikpusing(billingDueDate('2026-10', 20) === '2026-10-20', 'ordinary due date is unchanged');
+
+$radiusConfigForTest = mikhmonRadiusConfig();
+assertMikpusing(($radiusConfigForTest['ppp_auth_backend'] ?? '') === 'radius', 'Full RADIUS backend is enforced even if legacy settings exist');
+assertMikpusing(($radiusConfigForTest['disconnect_mode'] ?? '') === 'radius-dm', 'RADIUS Disconnect-Message is enforced as session disconnect mode');
 
 $ids = array();
 for ($i = 0; $i < 1000; $i++) {
@@ -70,5 +75,5 @@ try {
     elseif (is_file($packagePath)) unlink($packagePath);
 }
 
-echo "OK: Mikhmon smoke tests passed (date boundaries, 1000 invoice IDs, queue counters, normal/FUP mapping).\\n";
+echo "OK: Mikhmon smoke tests passed (date boundaries, invoice IDs, queue counters, package mapping, enforced Full RADIUS config).\\n";
 ?>
