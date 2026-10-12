@@ -14,9 +14,22 @@ APP_DIR="${APP_DIR:-/var/www/mikhmon}"
   echo "Source Mikhmon tidak ditemukan di ${APP_DIR}; clone repo dahulu." >&2; exit 1;
 }
 
+# MariaDB must be ready before FreeRADIUS opens its SQL pool, including reboot/restart.
+configure_service_order() {
+  install -d -m 0755 /etc/systemd/system/freeradius.service.d
+  cat > /etc/systemd/system/freeradius.service.d/mikpusing-sql.conf <<'UNIT'
+[Unit]
+Requires=mariadb.service
+After=mariadb.service
+UNIT
+  chmod 0644 /etc/systemd/system/freeradius.service.d/mikpusing-sql.conf
+  systemctl daemon-reload
+}
+
 # Avoid accidentally rotating the DB password/shared secret when the command is pasted twice.
 # Deliberate reconfiguration must be explicit and requires re-applying RouterOS settings.
 if [[ -f /etc/mikhmon/radius.php  ]]; then
+  configure_service_order
   echo "FreeRADIUS sudah memiliki konfigurasi di /etc/mikhmon/radius.php; aman, tidak ada perubahan."
   echo "Untuk memeriksa service: systemctl status freeradius mariadb --no-pager"
   echo "Untuk melihat secret RouterOS yang saat ini dipakai: cat /root/mikpusing-radius-credentials.txt (root only)."
@@ -247,6 +260,8 @@ for section in ('authorize', 'accounting', 'post-auth'):
 with open(path, 'w', encoding='utf-8') as f:
     f.writelines(lines)
 PY
+
+configure_service_order
 
 # Keep the web runtime's local config private; verify config before enabling service.
 freeradius -XC

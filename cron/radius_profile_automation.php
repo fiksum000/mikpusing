@@ -62,7 +62,7 @@ $log = function($message) use ($logPath) {
 };
 $errors = 0; $changed = 0; $skipped = 0; $managed = 0;
 $radius = null;
-$pendingPath = __DIR__ . '/../storage/radius-kick-pending.json';
+$pendingPath = getenv('MIKHMON_RADIUS_PENDING_FILE') ?: __DIR__ . '/../storage/radius-kick-pending.json';
 $pending = array();
 $kickRequested = array();
 if (is_file($pendingPath)) {
@@ -168,9 +168,12 @@ try {
     // list queries per router, rather than two list queries for every subscriber.
     if ($apply && count($pending) > 0) {
         $toKick = array_values(array_unique(array_merge(array_keys($pending), array_keys($kickRequested))));
+        usort($toKick, function($a, $b) use ($pending) { return strcmp($pending[$a]['last_attempt_at'] ?? '', $pending[$b]['last_attempt_at'] ?? ''); });
         $kickResults = $radiusDisconnectController->disconnectSubscribers($toKick);
         foreach ($toKick as $pendingUser) {
             $kicked = $kickResults[$pendingUser] ?? array('routers_checked' => 0, 'sessions' => 0, 'errors' => 1, 'router_errors' => array('unknown' => 'missing_kick_result'));
+            if (!empty($kicked['deferred'])) continue;
+            if (isset($pending[$pendingUser])) $pending[$pendingUser]['last_attempt_at'] = date('c');
             if ($kicked['routers_checked'] > 0 && $kicked['errors'] === 0 && count($kicked['router_errors']) === 0) {
                 unset($pending[$pendingUser]);
                 $label = isset($kickRequested[$pendingUser]) ? 'APPLIED' : 'RECOVERED';

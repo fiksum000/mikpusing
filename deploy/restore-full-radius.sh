@@ -41,5 +41,6 @@ chown root:www-data /etc/mikhmon/radius.php
 chmod 0640 /etc/mikhmon/radius.php
 apache2ctl configtest
 freeradius -XC
+systemctl daemon-reload
 systemctl start freeradius apache2 cron
 APP_DIR="$APP_DIR" bash "$APP_DIR/deploy/preflight.sh"

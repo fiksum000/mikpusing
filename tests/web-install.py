@@ -11,7 +11,7 @@ page('login',{'login':'1','user':credentials[0],'pass':credentials[1]})
 outside=page('sessions')
 nav=outside.split('id="sidenav"',1)[1].split('</div>',1)[0]
 assert 'id=radius-nas' in nav and 'id=billing' not in nav and '> Open' in outside
-for route in ('radius-dashboard','radius-accounting','radius-users','billing','tripay-settings','fonnte','wa-templates','fonnte-log','pppoe-packages','billing-integrations'):
+for route in ('radius-dashboard','radius-accounting','radius-users','bulk-import','billing','tripay-settings','fonnte','wa-templates','fonnte-log','pppoe-packages','billing-integrations'):
     html=page(route)
     assert 'id="main"' in html and 'id=radius-dashboard' in html and 'id=tripay-settings' in html, route
     assert 'Data belum tersedia' not in html, route

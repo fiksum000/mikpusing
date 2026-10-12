@@ -40,6 +40,12 @@ function radiusDashboardEscape($value) { return htmlspecialchars((string)$value,
 <?php } ?></div><?php } ?>
 <p>Server ini mengelola satu NAS. Data sesi berasal dari accounting RADIUS; sesi tanpa Stop dapat sudah terputus. Periksa waktu update terakhir.</p>
 <p>Isolir berlaku setelah jatuh tempo + 5 hari. Setelah pembayaran, scheduler memulihkan paket sesuai FUP dan meminta koneksi ulang melalui UDP 1700.</p>
+<h4>Kesehatan tugas terjadwal</h4>
+<table class="table table-bordered"><tr><th>Tugas</th><th>Aktivitas terakhir</th><th>Status</th></tr>
+<?php foreach (array('Accounting' => 'radius-accounting.log', 'Paket / isolir / DM' => 'pppoe-automation.log', 'Invoice / antrean WA' => 'invoice-generation.log') as $job => $file) {
+ $path = __DIR__ . '/../storage/' . $file; $modified = is_file($path) ? filemtime($path) : false;
+?><tr><td><?= radiusDashboardEscape($job); ?></td><td><?= $modified ? date('Y-m-d H:i:s', $modified) : 'Belum ada'; ?></td><td><?= $modified && time() - $modified < 900 ? 'Log baru tersedia — periksa hasilnya' : 'Perlu diperiksa: log belum ada / >15 menit'; ?></td></tr><?php } ?></table>
+<p>Waktu log bukan jaminan sukses. Periksa pesan gagal dan jalankan preflight bila ada peringatan.</p>
 <h4>100 catatan accounting terbaru</h4><div style="overflow-x:auto"><table class="table table-bordered table-hover">
 <thead><tr><th>Pelanggan</th><th>IP</th><th>Mulai</th><th>Update</th><th>Stop</th><th>Total byte</th></tr></thead><tbody>
 <?php foreach ($history as $row) { ?><tr>
