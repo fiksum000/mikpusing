@@ -120,7 +120,10 @@ if ($id == "login" || substr($url, -1) == "p") {
 } elseif ($id == "wa-templates") {
   include_once('./include/menu.php');
   include_once('./settings/wa-templates.php');
-} elseif ($id == "billing" && !empty($session)) {
+} elseif ($id == "radius-users") {
+  include_once('./include/menu.php');
+  include_once('./settings/radius-users.php');
+} elseif ($id == "billing" && (!empty($session) || is_file('/etc/mikhmon/radius.php'))) {
   include_once('./include/menu.php');
   include_once('./settings/billing.php');
 } elseif ($id == "tripay-settings") {
