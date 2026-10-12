@@ -224,6 +224,7 @@ RADIUS_CLIENT_SECRET=${RADIUS_CLIENT_SECRET}
 RouterOS commands (review address/service before applying):
 /radius add address=${RADIUS_SERVER_IP} service=ppp,hotspot secret=${RADIUS_CLIENT_SECRET} authentication-port=1812 accounting-port=1813 timeout=1s
 /radius incoming set accept=yes port=1700
+/ip firewall filter add chain=input action=accept src-address=${RADIUS_SERVER_IP} protocol=udp dst-port=1700 place-before=0 comment="MIKPUSING-RADIUS-DM"
 /ppp aaa set use-radius=yes accounting=yes interim-update=5m
 /ip hotspot profile set [find] use-radius=yes radius-accounting=yes radius-interim-update=5m
 
