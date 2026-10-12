@@ -12,7 +12,7 @@ apt-get update
 apt-get install -y ca-certificates curl software-properties-common unzip rsync apache2 mariadb-server cron logrotate openssl
 add-apt-repository -y ppa:ondrej/php
 apt-get update
-apt-get install -y "php${PHP_VERSION}" "php${PHP_VERSION}-cli" "php${PHP_VERSION}-curl" "php${PHP_VERSION}-mbstring" "php${PHP_VERSION}-xml" "php${PHP_VERSION}-zip" "php${PHP_VERSION}-mysql"
+apt-get install -y "php${PHP_VERSION}" "php${PHP_VERSION}-cli" "php${PHP_VERSION}-curl" "php${PHP_VERSION}-mbstring" "php${PHP_VERSION}-xml" "php${PHP_VERSION}-zip" "php${PHP_VERSION}-mysql" "libapache2-mod-php${PHP_VERSION}"
 
 # Buat konfigurasi runtime baru setelah PHP tersedia. Password disimpan memakai
 # format encrypt() bawaan Mikhmon dan tidak pernah masuk ke Git.
@@ -70,7 +70,8 @@ chmod +x "${APP_DIR}/cron/pppoe_profile_automation.php" "${APP_DIR}/cron/fonnte_
 cat >/etc/cron.d/mikhmon <<EOF
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-*/15 * * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/pppoe_profile_automation.php --apply >> storage/pppoe-automation.log 2>&1
+*/5 * * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/pppoe_profile_automation.php --apply >> storage/pppoe-automation.log 2>&1
+5 0 * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/generate-invoices.php >> storage/invoice-generation.log 2>&1
 0 9 * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/notify_overdue.php >> storage/notify-overdue.log 2>&1
 10 2 * * * ${WEB_USER} cd ${APP_DIR} && /usr/bin/php cron/fonnte_log_cleanup.php >> storage/fonnte-cleanup.log 2>&1
 EOF
