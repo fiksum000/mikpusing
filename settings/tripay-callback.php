@@ -69,7 +69,7 @@ if ($status === 'PAID' && strtolower((string)($invoice['status'] ?? '')) !== 'pa
   }
 } elseif (in_array($status, array('FAILED', 'EXPIRED', 'CANCELED', 'CANCELLED', 'REFUND'), true) && strtolower((string)($invoice['status'] ?? '')) !== 'paid') {
   $mappedStatus = ($status === 'EXPIRED') ? 'expired' : 'failed';
-  if (!billingUpdateInvoice($merchantRef, array('status' => $mappedStatus, 'tripay_reference' => $reference))) {
+  if (!billingUpdateInvoice($merchantRef, array('status' => $mappedStatus, 'tripay_reference' => $reference, 'payment_url' => ''))) {
     tripayCallbackRespond(500, array('success' => false, 'message' => 'Could not persist transaction status; retry callback'));
   }
 }
