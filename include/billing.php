@@ -33,6 +33,12 @@ if (!function_exists('billingPath')) {
     $date = DateTimeImmutable::createFromFormat('!Y-m-d', $period . '-01');
     return 'INV-' . $date->format('Ym') . '-' . $hash;
   }
+  function billingDueDate($period, $dueDay) {
+    if (!billingValidPeriod($period)) throw new InvalidArgumentException('Periode invoice harus berformat YYYY-MM.');
+    $monthStart = DateTimeImmutable::createFromFormat('!Y-m-d', $period . '-01');
+    $day = min((int)$monthStart->format('t'), max(1, (int)$dueDay));
+    return $monthStart->setDate((int)$monthStart->format('Y'), (int)$monthStart->format('m'), $day)->format('Y-m-d');
+  }
   function billingLegacyInvoiceNo($customer, $period) {
     if (!billingValidPeriod($period)) return '';
     $date = DateTimeImmutable::createFromFormat('!Y-m-d', $period . '-01');
@@ -59,7 +65,7 @@ if (!function_exists('billingPath')) {
       }
       $amount = isset($customer['amount']) && (int)$customer['amount'] > 0 ? (int)$customer['amount'] : (int)$defaultAmount;
       $dueDay = min($daysInMonth, max(1, (int)($customer['due_day'] ?? 20)));
-      $dueDate = $monthStart->setDate((int)$monthStart->format('Y'), (int)$monthStart->format('m'), $dueDay)->format('Y-m-d');
+      $dueDate = billingDueDate($period, $dueDay);
       $newInvoice = array(
         'invoice_no' => $invoiceNo, 'period' => $period, 'router_session' => $routerSession,
         'customer_name' => $name !== '' ? $name : $username, 'username' => $username,
