@@ -76,7 +76,7 @@ if (isset($_POST['create_tripay'])) {
         $checkout = isset($result['data']['checkout_url']) ? (string)$result['data']['checkout_url'] : '';
         billingUpdateInvoice($invoice['invoice_no'], array(
           'payment_method' => $invoice['payment_method'], 'tripay_reference' => $reference,
-          'payment_url' => $checkout, 'status' => 'pending'
+          'payment_url' => $checkout, 'status' => 'pending', 'payment_notification_sent_at' => ''
         ));
         if ($checkout !== '' && !empty($invoice['customer_phone']) && function_exists('fonnteSendMessage')) {
           $message = waTemplateRender('invoice', array(
@@ -87,7 +87,8 @@ if (isset($_POST['create_tripay'])) {
             'jatuh_tempo' => (string)($invoice['due_date'] ?? ''),
             'link_bayar' => $checkout
           ));
-          fonnteSendMessage($invoice['customer_phone'], $message, array('event' => 'invoice', 'invoice' => $invoice['invoice_no']));
+          $sendResult = fonnteSendMessage($invoice['customer_phone'], $message, array('event' => 'invoice', 'invoice' => $invoice['invoice_no']));
+          if (!empty($sendResult['status'])) billingUpdateInvoice($invoice['invoice_no'], array('payment_notification_sent_at' => date('Y-m-d H:i:s')));
         }
         $billingMessage = 'Transaksi TriPay berhasil dibuat.' . ($reference !== '' ? ' Reference: ' . htmlspecialchars($reference, ENT_QUOTES, 'UTF-8') : '');
         $billingType = 'success';
