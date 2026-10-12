@@ -158,6 +158,8 @@ $radiusSecretFromPost = ''; // Never persist shared secrets in the web configura
     <a href="./admin.php?id=pppoe-packages" class="group-item group-item-md">Atur group paket / FUP / ISOLIR</a>
     <a href="./admin.php?id=radius-users" class="group-item group-item-md">Kelola user RADIUS</a>
     <a href="./admin.php?id=tripay-settings" class="group-item group-item-md">Pengaturan TriPay</a>
+    <a href="./admin.php?id=fonnte" class="group-item group-item-md">Pengaturan WhatsApp / Fonnte</a>
+    <a href="./admin.php?id=wa-templates" class="group-item group-item-md">Template pesan invoice & isolir</a>
   </div></div>
 
   <div class="card mt-3"><div class="card-header"><h3 class="card-title">4. Pemeriksaan otomatis setelah setup</h3></div><div class="card-body">
