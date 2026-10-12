@@ -112,6 +112,7 @@ $methods = array('QRIS' => 'QRIS', 'DANA' => 'DANA', 'OVO' => 'OVO', 'SHOPEEPAY'
 <div class="row">
   <div class="col-12">
     <div class="card"><div class="card-header"><h3 class="card-title"><i class="fa fa-money"></i> Billing Bulanan & TriPay</h3></div><div class="card-body">
+      <div class="mb-3"><a href="./admin.php?id=billing-integrations" class="group-item group-item-md"><i class="fa fa-plug"></i> Pengaturan Integrasi MikroTik / RADIUS & Perintah Copy-Paste</a></div>
       <?php if ($billingMessage !== '') { ?><div class="bg-<?= $billingType; ?> pd-10 radius-3 mb-3"><?= $billingMessage; ?></div><?php } ?>
       <form method="post" class="row mb-4"><div class="col-3"><label>Periode</label><input class="form-control" type="month" name="period" value="<?= htmlspecialchars($period, ENT_QUOTES, 'UTF-8'); ?>" required="1"/></div><div class="col-3"><label>Harga default</label><input class="form-control" type="number" name="default_amount" min="0" value="<?= $defaultAmount; ?>" required="1"/></div><div class="col-4 align-self-end"><input class="group-item group-item-md" type="submit" name="generate_billing" value="Generate Invoice PPPoE"/></div></form>
       <p class="text-muted">Ditemukan <b><?= count($customers); ?></b> pelanggan PPPoE pada router <b><?= htmlspecialchars($billingIdentity, ENT_QUOTES, 'UTF-8'); ?></b>. Data kontak dan harga disimpan per username PPP Secret. Invoice duplikat untuk periode dan username yang sama akan dilewati.</p>
