@@ -1,37 +1,53 @@
 <?php
 /**
- * Helpers to force an authenticated MikroTik session to reauthenticate after
- * its RADIUS group/profile changes. Uses already-configured Mikhmon router
- * sessions from include/config.php; no credentials are stored in this file.
+ * RouterOS session controller for payment/isolation profile changes.
+ * Caches a single API connection per configured router and lists active
+ * sessions once per protocol/router, then removes only requested usernames.
  */
 require_once __DIR__ . '/routeros_api.class.php';
 
+if (!function_exists('mikhmonKickSubscribersOnApi')) {
+  function mikhmonKickSubscribersOnApi($api, $usernames) {
+    $targets = array_fill_keys(array_map('strval', (array)$usernames), true);
+    $counts = array();
+    foreach ($targets as $username => $_) $counts[$username] = array('ppp' => 0, 'hotspot' => 0, 'errors' => 0);
+    if (!$targets) return $counts;
+
+    $pppRows = $api->comm('/ppp/active/print');
+    if (!is_array($pppRows) || isset($pppRows['!trap'])) {
+      foreach ($counts as &$summary) $summary['errors']++;
+      unset($summary);
+    } else {
+      foreach ($pppRows as $row) {
+        $username = (string)($row['name'] ?? '');
+        if ($username === '' || !isset($targets[$username]) || empty($row['.id'])) continue;
+        $removed = $api->comm('/ppp/active/remove', array('.id' => $row['.id']));
+        if (is_array($removed) && isset($removed['!trap'])) $counts[$username]['errors']++;
+        else $counts[$username]['ppp']++;
+      }
+    }
+
+    $hotspotRows = $api->comm('/ip/hotspot/active/print');
+    if (!is_array($hotspotRows) || isset($hotspotRows['!trap'])) {
+      foreach ($counts as &$summary) $summary['errors']++;
+      unset($summary);
+    } else {
+      foreach ($hotspotRows as $row) {
+        $username = (string)($row['user'] ?? '');
+        if ($username === '' || !isset($targets[$username]) || empty($row['.id'])) continue;
+        $removed = $api->comm('/ip/hotspot/active/remove', array('.id' => $row['.id']));
+        if (is_array($removed) && isset($removed['!trap'])) $counts[$username]['errors']++;
+        else $counts[$username]['hotspot']++;
+      }
+    }
+    return $counts;
+  }
+}
+
 if (!function_exists('mikhmonKickSubscriberOnApi')) {
   function mikhmonKickSubscriberOnApi($api, $username) {
-    $username = (string)$username;
-    if ($username === '') return array('ppp' => 0, 'hotspot' => 0, 'errors' => 0);
-    $counts = array('ppp' => 0, 'hotspot' => 0, 'errors' => 0);
-
-    $pppRows = $api->comm('/ppp/active/print', array('?name' => $username));
-    if (is_array($pppRows) && !isset($pppRows['!trap'])) {
-      foreach ($pppRows as $row) {
-        if (empty($row['.id'])) continue;
-        $removed = $api->comm('/ppp/active/remove', array('.id' => $row['.id']));
-        if (is_array($removed) && isset($removed['!trap'])) $counts['errors']++;
-        else $counts['ppp']++;
-      }
-    } elseif (is_array($pppRows) && isset($pppRows['!trap'])) $counts['errors']++;
-
-    $hotspotRows = $api->comm('/ip/hotspot/active/print', array('?user' => $username));
-    if (is_array($hotspotRows) && !isset($hotspotRows['!trap'])) {
-      foreach ($hotspotRows as $row) {
-        if (empty($row['.id'])) continue;
-        $removed = $api->comm('/ip/hotspot/active/remove', array('.id' => $row['.id']));
-        if (is_array($removed) && isset($removed['!trap'])) $counts['errors']++;
-        else $counts['hotspot']++;
-      }
-    } elseif (is_array($hotspotRows) && isset($hotspotRows['!trap'])) $counts['errors']++;
-    return $counts;
+    $all = mikhmonKickSubscribersOnApi($api, array((string)$username));
+    return $all[(string)$username] ?? array('ppp' => 0, 'hotspot' => 0, 'errors' => 0);
   }
 }
 
@@ -80,22 +96,45 @@ if (!class_exists('MikhmonRouterSessionController')) {
       return $api;
     }
 
-    public function disconnectSubscriber($username) {
-      $summary = array('routers_checked' => 0, 'ppp' => 0, 'hotspot' => 0, 'errors' => 0, 'router_errors' => array());
+    /**
+     * Batch disconnect. Routers are queried once for all active PPP and
+     * Hotspot sessions rather than twice per subscriber.
+     *
+     * Each result tracks whether every configured router was reached. This is
+     * intentionally conservative: callers keep retrying if any router is down.
+     */
+    public function disconnectSubscribers($usernames) {
+      $usernames = array_values(array_unique(array_filter(array_map('strval', (array)$usernames), function($u) { return $u !== ''; })));
+      $result = array();
+      foreach ($usernames as $username) {
+        $result[$username] = array('routers_checked' => 0, 'ppp' => 0, 'hotspot' => 0, 'errors' => 0, 'router_errors' => array());
+      }
+      if (!$usernames) return $result;
+
       foreach ($this->routerData as $sessionName => $sessionData) {
         if ($sessionName === 'mikhmon' || !is_array($sessionData)) continue;
         $api = $this->apiFor((string)$sessionName, $sessionData);
         if (!$api) {
-          if (isset($this->connectErrors[$sessionName])) $summary['router_errors'][$sessionName] = $this->connectErrors[$sessionName];
+          $reason = $this->connectErrors[$sessionName] ?? 'connect_failed';
+          foreach ($usernames as $username) $result[$username]['router_errors'][(string)$sessionName] = $reason;
           continue;
         }
-        $summary['routers_checked']++;
-        $result = mikhmonKickSubscriberOnApi($api, $username);
-        $summary['ppp'] += $result['ppp'];
-        $summary['hotspot'] += $result['hotspot'];
-        $summary['errors'] += $result['errors'];
+
+        foreach ($usernames as $username) $result[$username]['routers_checked']++;
+        $routerCounts = mikhmonKickSubscribersOnApi($api, $usernames);
+        foreach ($usernames as $username) {
+          $counts = $routerCounts[$username] ?? array('ppp' => 0, 'hotspot' => 0, 'errors' => 0);
+          $result[$username]['ppp'] += $counts['ppp'];
+          $result[$username]['hotspot'] += $counts['hotspot'];
+          $result[$username]['errors'] += $counts['errors'];
+        }
       }
-      return $summary;
+      return $result;
+    }
+
+    public function disconnectSubscriber($username) {
+      $all = $this->disconnectSubscribers(array((string)$username));
+      return $all[(string)$username] ?? array('routers_checked' => 0, 'ppp' => 0, 'hotspot' => 0, 'errors' => 0, 'router_errors' => array());
     }
 
     public function closeAll() {
