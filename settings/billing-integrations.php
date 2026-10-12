@@ -114,6 +114,10 @@ $radiusSecretFromPost = ''; // Never persist shared secrets in the web configura
             <input class="form-control" id="hotspotProfiles" name="hotspot_profiles" placeholder="contoh hsprof1, hotspot-office" value="<?= htmlspecialchars((string)$settings['hotspot_profiles'], ENT_QUOTES, 'UTF-8'); ?>"/>
             <small class="text-muted">Digunakan untuk membentuk perintah RouterOS yang spesifik; tidak mengubah profile yang tidak tercantum.</small>
           </div>
+          <div class="col-md-6 mb-3"><label>Harga default bulanan (Rp)</label>
+            <input class="form-control" type="number" min="0" step="1000" name="default_monthly_amount" value="<?= (int)($settings['default_monthly_amount'] ?? 0); ?>"/>
+            <small class="text-muted">Dipakai scheduler invoice harian sebagai harga cadangan. Nilai 0 berarti invoice tidak dibuat otomatis dan pelanggan tidak diisolir karena invoice yang tidak ada.</small>
+          </div>
         </div>
         <button class="group-item group-item-md" type="submit" name="save_integration_settings">Simpan pengaturan integrasi</button>
         <a class="group-item group-item-md" href="./admin.php?id=billing&session=<?= rawurlencode((string)($session ?? '')); ?>">Kembali ke Billing</a>
