@@ -40,6 +40,7 @@ $errors = 0; $changed = 0; $skipped = 0; $managed = 0;
 $radius = null;
 $pendingPath = __DIR__ . '/../storage/radius-kick-pending.json';
 $pending = array();
+$kickRequested = array();
 if (is_file($pendingPath)) {
     $storedPending = json_decode(@file_get_contents($pendingPath) ?: '{}', true);
     if (is_array($storedPending)) $pending = $storedPending;
@@ -90,27 +91,26 @@ try {
         try {
             $radius->setProfile($username, $target);
             $pending[$username] = array('target' => $target, 'requested_at' => date('c'));
-            $kicked = $routerSessionController->disconnectSubscriber($username);
+            $kickRequested[$username] = $message;
             $changed++;
-            $log($message . ' sessions_kicked_ppp=' . $kicked['ppp'] . ' sessions_kicked_hotspot=' . $kicked['hotspot'] . ' routers_checked=' . $kicked['routers_checked'] . ' kick_errors=' . $kicked['errors']);
-            if ($kicked['routers_checked'] > 0 && $kicked['errors'] === 0 && count($kicked['router_errors']) === 0) {
-                unset($pending[$username]);
-            } else {
-                $log("WARN backend=radius user={$username} session_kick_pending; next five-minute runs retry until every configured router API responds");
-            }
         } catch (Throwable $e) {
             $errors++; $log("ERROR " . $message . " reason=" . preg_replace('/\s+/', ' ', $e->getMessage()));
         }
     }
-    // Retry session changes that previously could not reach a RouterOS API.
+    // Batch all profile changes and earlier retries together: only two active-session
+    // list queries per router, rather than two list queries for every subscriber.
     if ($apply && count($pending) > 0) {
-        foreach (array_keys($pending) as $pendingUser) {
-            $kicked = $routerSessionController->disconnectSubscriber((string)$pendingUser);
+        $toKick = array_values(array_unique(array_merge(array_keys($pending), array_keys($kickRequested))));
+        $kickResults = $routerSessionController->disconnectSubscribers($toKick);
+        foreach ($toKick as $pendingUser) {
+            $kicked = $kickResults[$pendingUser] ?? array('routers_checked' => 0, 'ppp' => 0, 'hotspot' => 0, 'errors' => 1, 'router_errors' => array('unknown' => 'missing_kick_result'));
             if ($kicked['routers_checked'] > 0 && $kicked['errors'] === 0 && count($kicked['router_errors']) === 0) {
                 unset($pending[$pendingUser]);
-                $log("RECOVERED backend=radius user={$pendingUser} pending_session_kick_completed ppp={$kicked['ppp']} hotspot={$kicked['hotspot']}");
+                $label = isset($kickRequested[$pendingUser]) ? 'APPLIED' : 'RECOVERED';
+                $log("{$label} backend=radius user={$pendingUser} sessions_kicked_ppp={$kicked['ppp']} sessions_kicked_hotspot={$kicked['hotspot']} routers_checked={$kicked['routers_checked']}");
             } else {
-                $log("WARN backend=radius user={$pendingUser} session_kick_still_pending routers_checked={$kicked['routers_checked']} errors={$kicked['errors']} offline_routers=" . count($kicked['router_errors']));
+                if (!isset($pending[$pendingUser])) $pending[$pendingUser] = array('target' => '', 'requested_at' => date('c'));
+                $log("WARN backend=radius user={$pendingUser} session_kick_pending routers_checked={$kicked['routers_checked']} errors={$kicked['errors']} offline_routers=" . count($kicked['router_errors']) . "; retrying on next five-minute run");
             }
         }
         $pendingJson = json_encode($pending, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
