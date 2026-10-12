@@ -7,8 +7,8 @@ require_once('./include/tripay.php');
 $settingsPath = __DIR__ . '/../storage/integration_settings.json';
 $settings = mikhmonIntegrationSettings();
 $baseRadius = mikhmonRadiusBaseConfig();
-$currentBackend = strtolower((string)($settings['ppp_auth_backend'] ?? ($baseRadius['ppp_auth_backend'] ?? 'routeros')));
-if (!in_array($currentBackend, array('routeros','radius'), true)) $currentBackend = 'routeros';
+$currentBackend = strtolower((string)($settings['ppp_auth_backend'] ?? ($baseRadius['ppp_auth_backend'] ?? 'radius')));
+if (!in_array($currentBackend, array('routeros','radius'), true)) $currentBackend = 'radius';
 $settings = array_merge(array(
   'ppp_auth_backend' => $currentBackend,
   'radius_server_ip' => '',
