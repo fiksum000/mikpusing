@@ -10,6 +10,9 @@ require_once __DIR__ . '/../lib/free_radius_client.php';
 require_once __DIR__ . '/../include/config.php';
 require_once __DIR__ . '/../include/customers.php';
 require_once __DIR__ . '/../include/billing.php';
+require_once __DIR__ . '/../include/tripay.php';
+require_once __DIR__ . '/../include/wa_templates.php';
+require_once __DIR__ . '/../include/fonnte_log.php';
 
 $period = date('Y-m');
 $integrationSettings = mikhmonIntegrationSettings();
@@ -83,7 +86,67 @@ if ($backend === 'radius') {
     } finally { $api->disconnect(); }
   }
 }
-$summary = "Invoice generation period={$period} backend={$backend} customers={$totalCustomers} created={$totalCreated} errors={$errors} default_amount={$defaultAmount}";
+
+// Automatically create one checkout link per current-period invoice when a default method is configured.
+$automaticLinksCreated = 0;
+$automaticLinksFailed = 0;
+$autoMethod = strtoupper(trim((string)($integrationSettings['default_payment_method'] ?? '')));
+$tripaySettings = tripayConfig();
+if ($autoMethod !== '' && !empty($tripaySettings['api_key']) && !empty($tripaySettings['private_key']) && !empty($tripaySettings['merchant_code']) && tripayPublicBaseUrl() !== '') {
+  foreach (billingReadInvoices() as $invoice) {
+    if ((string)($invoice['period'] ?? '') !== $period) continue;
+    if (!in_array(strtolower((string)($invoice['status'] ?? 'unpaid')), array('unpaid','failed','expired'), true)) continue;
+    if (trim((string)($invoice['payment_url'] ?? '')) !== '') continue;
+    if ((int)($invoice['amount'] ?? 0) <= 0) continue;
+    if (trim((string)($invoice['customer_phone'] ?? '')) === '') {
+      mikhmonInvoiceLog("WARN auto_checkout invoice=" . (string)($invoice['invoice_no'] ?? '') . " skipped_no_customer_phone");
+      continue;
+    }
+    $invoice['payment_method'] = $autoMethod;
+    try {
+      $result = tripayCreateTransaction($invoice);
+      $checkout = !empty($result['data']['checkout_url']) ? (string)$result['data']['checkout_url'] : '';
+      $reference = !empty($result['data']['reference']) ? (string)$result['data']['reference'] : '';
+      if (empty($result['success']) || $checkout === '' || $reference === '') {
+        $automaticLinksFailed++;
+        mikhmonInvoiceLog("ERROR auto_checkout invoice=" . (string)$invoice['invoice_no'] . " method={$autoMethod} message=" . preg_replace('/\\s+/', ' ', (string)($result['message'] ?? 'No checkout URL/reference')));
+        continue;
+      }
+      $updated = billingUpdateInvoice((string)$invoice['invoice_no'], array(
+        'payment_method' => $autoMethod, 'tripay_reference' => $reference,
+        'payment_url' => $checkout, 'status' => 'pending'
+      ));
+      if (!$updated) {
+        $automaticLinksFailed++;
+        mikhmonInvoiceLog("ERROR auto_checkout invoice=" . (string)$invoice['invoice_no'] . " transaction_created_but_invoice_write_failed; check TriPay dashboard before retry");
+        continue;
+      }
+      $message = waTemplateRender('invoice', array(
+        'nama' => (string)($invoice['customer_name'] ?? $invoice['username'] ?? ''),
+        'invoice' => (string)$invoice['invoice_no'],
+        'periode' => (string)($invoice['period'] ?? ''),
+        'total' => 'Rp' . number_format((int)$invoice['amount'], 0, ',', '.'),
+        'jatuh_tempo' => (string)($invoice['due_date'] ?? ''),
+        'link_bayar' => $checkout
+      ));
+      $sentResult = fonnteSendMessage((string)$invoice['customer_phone'], $message, array('event' => 'invoice', 'invoice' => (string)$invoice['invoice_no']));
+      if (empty($sentResult['status'])) {
+        $automaticLinksFailed++;
+        mikhmonInvoiceLog("WARN auto_checkout invoice=" . (string)$invoice['invoice_no'] . " checkout_saved_but_whatsapp_failed reason=" . preg_replace('/\\s+/', ' ', (string)($sentResult['reason'] ?? 'unknown')));
+      } else {
+        $automaticLinksCreated++;
+        mikhmonInvoiceLog("AUTO_CHECKOUT invoice=" . (string)$invoice['invoice_no'] . " method={$autoMethod} reference={$reference} whatsapp=sent");
+      }
+    } catch (Throwable $e) {
+      $automaticLinksFailed++;
+      mikhmonInvoiceLog("ERROR auto_checkout invoice=" . (string)($invoice['invoice_no'] ?? '') . " message=" . preg_replace('/\\s+/', ' ', $e->getMessage()));
+    }
+  }
+} elseif ($autoMethod !== '') {
+  mikhmonInvoiceLog("WARN auto_checkout disabled: check TriPay credentials and public HTTPS URL in Billing > Integrations");
+}
+
+$summary = "Invoice generation period={$period} backend={$backend} customers={$totalCustomers} created={$totalCreated} checkout_links={$automaticLinksCreated} checkout_failures={$automaticLinksFailed} errors={$errors} default_amount={$defaultAmount}";
 echo date('c') . ' ' . $summary . PHP_EOL;
 mikhmonInvoiceLog($summary);
 if ($errors > 0) exit(1);
