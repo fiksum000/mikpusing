@@ -5,12 +5,22 @@ if (!function_exists('billingPath')) {
     return ($override !== false && trim($override) !== '') ? $override : (__DIR__ . '/../storage/invoices.json');
   }
   function billingEnsureStorage() {
-    $dir = dirname(billingPath());
+    $path = billingPath();
+    $dir = dirname($path);
     if (!is_dir($dir) && !@mkdir($dir, 0750, true) && !is_dir($dir)) {
       throw new RuntimeException('Direktori storage invoice tidak bisa dibuat.');
     }
-    if (!file_exists(billingPath()) && @file_put_contents(billingPath(), '[]', LOCK_EX) === false) {
-      throw new RuntimeException('File invoice tidak bisa dibuat.');
+    if (!file_exists($path)) {
+      // Exclusive create avoids clobbering an invoice file another process
+      // created between file_exists() and initialization.
+      $handle = @fopen($path, 'x');
+      if (is_resource($handle)) {
+        $written = fwrite($handle, '[]');
+        fclose($handle);
+        if ($written === false) throw new RuntimeException('File invoice tidak bisa diinisialisasi.');
+      } elseif (!file_exists($path)) {
+        throw new RuntimeException('File invoice tidak bisa dibuat.');
+      }
     }
   }
   function billingReadInvoices() {
