@@ -2,6 +2,7 @@
 error_reporting(0);
 if (!isset($_SESSION['mikhmon'])) { header('Location:../admin.php?id=login'); exit; }
 require_once('./lib/free_radius_client.php');
+require_once('./include/tripay.php');
 
 $settingsPath = __DIR__ . '/../storage/integration_settings.json';
 $settings = mikhmonIntegrationSettings();
@@ -14,17 +15,26 @@ $settings = array_merge(array(
   'radius_nas_ip' => '',
   'portal_ip' => '',
   'hotspot_profiles' => '',
-  'default_monthly_amount' => 0
+  'default_monthly_amount' => 0,
+  'public_base_url' => '',
+  'default_payment_method' => ''
 ), $settings);
 if (empty($_SESSION['billing_integrations_csrf'])) $_SESSION['billing_integrations_csrf'] = bin2hex(random_bytes(32));
 $csrf = $_SESSION['billing_integrations_csrf'];
 $message = ''; $messageType = 'info';
 $radiusConfigPath = getenv('MIKHMON_RADIUS_CONFIG') ?: '/etc/mikhmon/radius.php';
 $radiusReady = is_file($radiusConfigPath) && is_readable($radiusConfigPath) && !empty($baseRadius['db_password']);
+$tripayStatus = tripayConfig();
+$tripayReady = !empty($tripayStatus['api_key']) && !empty($tripayStatus['private_key']) && !empty($tripayStatus['merchant_code']);
 $secretShapeValid = true;
 
 function billingIntegrationValidIpv4($value) {
   return $value === '' || filter_var($value, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false;
+}
+function billingIntegrationValidPublicBaseUrl($value) {
+  if ($value === '') return true;
+  $parts = parse_url($value);
+  return is_array($parts) && !empty($parts['scheme']) && !empty($parts['host']) && in_array(strtolower((string)$parts['scheme']), array('http','https'), true) && !isset($parts['user']) && !isset($parts['pass']) && !isset($parts['query']) && !isset($parts['fragment']);
 }
 function billingIntegrationSaveSettings($path, $data) {
   $dir = dirname($path);
@@ -48,6 +58,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_integration_sett
     $portalIp = trim((string)($_POST['portal_ip'] ?? ''));
     $hotspotProfiles = trim((string)($_POST['hotspot_profiles'] ?? ''));
     $defaultMonthlyAmount = max(0, (int)($_POST['default_monthly_amount'] ?? 0));
+    $publicBaseUrl = rtrim(trim((string)($_POST['public_base_url'] ?? '')), '/');
+    $defaultPaymentMethod = strtoupper(trim((string)($_POST['default_payment_method'] ?? '')));
+    $validPaymentMethods = array('', 'QRIS', 'DANA', 'OVO', 'SHOPEEPAY', 'BCAVA', 'BRIVA', 'MANDIRIVA', 'ALFAMART', 'INDOMARET');
     if (!in_array($backend, array('routeros','radius'), true)) {
       $message = 'Pilih backend RouterOS lokal atau FreeRADIUS.'; $messageType = 'danger';
     } elseif (!billingIntegrationValidIpv4($radiusServerIp) || !billingIntegrationValidIpv4($radiusNasIp) || !billingIntegrationValidIpv4($portalIp)) {
@@ -56,6 +69,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_integration_sett
       $message = 'Mode RADIUS memerlukan IP LAN CT dan IP sumber MikroTik (NAS).'; $messageType = 'danger';
     } elseif ($backend === 'radius' && !$radiusReady) {
       $message = 'FreeRADIUS belum dikonfigurasi. Jalankan installer RADIUS satu kali di CT terlebih dahulu; mode tidak diubah.'; $messageType = 'danger';
+    } elseif (!billingIntegrationValidPublicBaseUrl($publicBaseUrl)) {
+      $message = 'URL publik harus berupa http:// atau https:// tanpa username/password, query, atau fragment.'; $messageType = 'danger';
+    } elseif (!in_array($defaultPaymentMethod, $validPaymentMethods, true)) {
+      $message = 'Metode pembayaran default tidak valid.'; $messageType = 'danger';
+    } elseif ($defaultPaymentMethod !== '' && ($publicBaseUrl === '' || !$tripayReady)) {
+      $message = 'Untuk checkout otomatis, atur URL publik di sini dan konfigurasi kredensial TriPay di Pengaturan TriPay dahulu.'; $messageType = 'danger';
     } elseif ($hotspotProfiles !== '' && !preg_match('/^[A-Za-z0-9_. ,@-]{1,500}$/', $hotspotProfiles)) {
       $message = 'Nama profile Hotspot hanya boleh berisi huruf, angka, titik, garis bawah, spasi, koma, @, dan minus.'; $messageType = 'danger';
     } else {
@@ -66,6 +85,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_integration_sett
         'portal_ip' => $portalIp,
         'hotspot_profiles' => $hotspotProfiles,
         'default_monthly_amount' => $defaultMonthlyAmount,
+        'public_base_url' => $publicBaseUrl,
+        'default_payment_method' => $defaultPaymentMethod,
         'updated_at' => date('Y-m-d H:i:s')
       );
       if (billingIntegrationSaveSettings($settingsPath, $settings)) {
