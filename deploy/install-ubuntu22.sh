@@ -51,8 +51,8 @@ cat >/etc/apache2/sites-available/mikhmon.conf <<EOF
     <Directory ${APP_DIR}/storage>
         Require all denied
     </Directory>
-    ErrorLog \\${APACHE_LOG_DIR}/mikhmon-error.log
-    CustomLog \\${APACHE_LOG_DIR}/mikhmon-access.log combined
+    ErrorLog ${APACHE_LOG_DIR}/mikhmon-error.log
+    CustomLog ${APACHE_LOG_DIR}/mikhmon-access.log combined
 </VirtualHost>
 EOF
 a2ensite mikhmon.conf
