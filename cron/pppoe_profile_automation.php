@@ -11,6 +11,18 @@
 if (PHP_SAPI !== 'cli') { http_response_code(403); exit("CLI only\n"); }
 date_default_timezone_set(getenv('TZ') ?: 'Asia/Jakarta');
 
+$automationLockPath = __DIR__ . '/../storage/pppoe-profile-automation.lock';
+if (!is_dir(dirname($automationLockPath))) @mkdir(dirname($automationLockPath), 0750, true);
+$automationLockHandle = @fopen($automationLockPath, 'c');
+if (!$automationLockHandle || !flock($automationLockHandle, LOCK_EX | LOCK_NB)) {
+    echo date('c') . " PPPoE automation skipped: another run is still active.\\n";
+    if (is_resource($automationLockHandle)) fclose($automationLockHandle);
+    exit(0);
+}
+register_shutdown_function(function() use ($automationLockHandle) {
+    if (is_resource($automationLockHandle)) { flock($automationLockHandle, LOCK_UN); fclose($automationLockHandle); }
+});
+
 require_once __DIR__ . '/../lib/routeros_api.class.php';
 require_once __DIR__ . '/../include/config.php';
 require_once __DIR__ . '/../include/customers.php';
