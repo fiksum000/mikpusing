@@ -41,8 +41,11 @@ $expectedReference = trim((string)($invoice['tripay_reference'] ?? ''));
 if ($expectedReference !== '' && !hash_equals($expectedReference, $reference)) {
   tripayCallbackRespond(403, array('success' => false, 'message' => 'Transaction reference does not match this invoice'));
 }
-if (!isset($payload['total_amount']) || !is_numeric($payload['total_amount']) || (int)$payload['total_amount'] !== (int)($invoice['amount'] ?? -1)) {
-  tripayCallbackRespond(400, array('success' => false, 'message' => 'Transaction amount does not match invoice'));
+$invoiceAmount = (int)($invoice['amount'] ?? -1);
+$customerFee = isset($payload['fee_customer']) && is_numeric($payload['fee_customer']) ? (int)$payload['fee_customer'] : 0;
+$expectedTotal = $invoiceAmount + max(0, $customerFee);
+if (!isset($payload['total_amount']) || !is_numeric($payload['total_amount']) || $invoiceAmount < 0 || (int)$payload['total_amount'] !== $expectedTotal) {
+  tripayCallbackRespond(400, array('success' => false, 'message' => 'Transaction amount does not match invoice plus customer fee'));
 }
 
 if ($status === 'PAID' && strtolower((string)($invoice['status'] ?? '')) !== 'paid') {
