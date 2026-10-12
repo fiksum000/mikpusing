@@ -23,14 +23,12 @@ register_shutdown_function(function() use ($automationLockHandle) {
     if (is_resource($automationLockHandle)) { flock($automationLockHandle, LOCK_UN); fclose($automationLockHandle); }
 });
 
-require_once __DIR__ . '/../lib/routeros_api.class.php';
 require_once __DIR__ . '/../include/config.php';
 require_once __DIR__ . '/../include/customers.php';
 require_once __DIR__ . '/../include/billing.php';
 require_once __DIR__ . '/../include/pppoe_packages.php';
 require_once __DIR__ . '/../include/pppoe_usage.php';
 require_once __DIR__ . '/../lib/free_radius_client.php';
-require_once __DIR__ . '/../lib/routeros_session_control.php';
 
 // Central FreeRADIUS users are managed in SQL groups, not local /ppp/secret.
 $radiusConfig = mikhmonRadiusConfig();
@@ -39,6 +37,10 @@ if ($authBackend === 'radius') {
     require __DIR__ . '/radius_profile_automation.php';
     exit;
 }
+
+// Legacy RouterOS API code is loaded only when explicitly selected.
+require_once __DIR__ . '/../lib/routeros_api.class.php';
+require_once __DIR__ . '/../lib/routeros_session_control.php';
 
 $apply = in_array('--apply', $argv, true);
 $period = date('Y-m');
