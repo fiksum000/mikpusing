@@ -95,7 +95,7 @@ if ($autoCheckoutReady) {
         $updated = billingUpdateInvoice($invoiceNo, array(
           'payment_method' => $autoMethod, 'tripay_reference' => $reference,
           'payment_url' => $checkout, 'status' => 'pending',
-          'payment_notification_sent_at' => ''
+          'invoice_notification_sent_at' => ''
         ));
         if (!$updated) {
           $automaticLinksFailed++;
@@ -113,7 +113,7 @@ if ($autoCheckoutReady) {
 
     // A saved URL with no sent marker means a prior Fonnte attempt failed or was interrupted.
     $invoice = billingFindInvoice($invoiceNo);
-    if (!$invoice || !empty($invoice['payment_notification_sent_at'])) continue;
+    if (!$invoice || !empty($invoice['invoice_notification_sent_at'])) continue;
     $message = waTemplateRender('invoice', array(
       'nama' => (string)($invoice['customer_name'] ?? $invoice['username'] ?? ''),
       'invoice' => $invoiceNo,
@@ -128,7 +128,7 @@ if ($autoCheckoutReady) {
       mikhmonInvoiceLog("WARN auto_checkout invoice={$invoiceNo} checkout_saved_but_whatsapp_failed reason=" . preg_replace('/\\s+/', ' ', (string)($sentResult['reason'] ?? 'unknown')));
       continue;
     }
-    if (!billingUpdateInvoice($invoiceNo, array('payment_notification_sent_at' => date('Y-m-d H:i:s')))) {
+    if (!billingUpdateInvoice($invoiceNo, array('invoice_notification_sent_at' => date('Y-m-d H:i:s')))) {
       $automaticLinksFailed++;
       mikhmonInvoiceLog("WARN auto_checkout invoice={$invoiceNo} whatsapp_sent_but_sent_marker_write_failed; duplicate notification possible on next run");
       continue;
