@@ -269,6 +269,7 @@ tail -n 80 /var/www/mikhmon/storage/radius-accounting.log</pre>
     if(ipsOk&&safeSecret(secret)){
       var r=[':if ([:len [/radius find where comment="mikpusing-radius"]] > 0) do={ /radius set [find where comment="mikpusing-radius"] address='+server+' src-address='+nas+' service=ppp,hotspot secret='+secret+' authentication-port=1812 accounting-port=1813 timeout=1s } else={ /radius add address='+server+' src-address='+nas+' service=ppp,hotspot secret='+secret+' authentication-port=1812 accounting-port=1813 timeout=1s comment="mikpusing-radius" }',
         '/radius incoming set accept=yes port=1700',
+        ':if ([:len [/ip firewall filter find where comment="MIKPUSING-RADIUS-DM"]] = 0) do={ /ip firewall filter add chain=input action=accept src-address='+server+' protocol=udp dst-port=1700 place-before=0 comment="MIKPUSING-RADIUS-DM" } else={ /ip firewall filter set [find where comment="MIKPUSING-RADIUS-DM"] chain=input action=accept src-address='+server+' protocol=udp dst-port=1700 }',
         '/ppp aaa set use-radius=yes accounting=yes interim-update=5m'];
       if(hs.length){
         hs.forEach(function(p){r.push('/ip hotspot profile set [find where name="'+p+'"] use-radius=yes radius-accounting=yes radius-interim-update=5m');});
