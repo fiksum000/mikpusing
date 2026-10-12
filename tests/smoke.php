@@ -3,6 +3,7 @@ error_reporting(E_ALL);
 date_default_timezone_set('Asia/Jakarta');
 require_once __DIR__ . '/../include/billing.php';
 require_once __DIR__ . '/../include/pppoe_usage.php';
+require_once __DIR__ . '/../include/pppoe_packages.php';
 
 function assertMikpusing($condition, $message) {
     if (!$condition) {
@@ -51,5 +52,23 @@ $noQueue = pppoeReadQueueCounters(array(
 ), array('name' => 'customer-3', 'remote-address' => '10.10.10.2'));
 assertMikpusing($noQueue === null, 'missing queue does not return a false zero-usage value');
 
-echo "OK: Mikhmon smoke tests passed (date boundaries, 1000 invoice IDs, queue counters).\n";
+
+$packagePath = pppoePackagePath();
+$packageExisted = is_file($packagePath);
+$packageBackup = $packageExisted ? file_get_contents($packagePath) : null;
+try {
+    pppoePackageWrite(array(
+        'isolir_profile' => 'ISOLIR',
+        'packages' => array(array('name' => 'Test 10M', 'normal_profile' => 'PPPOE-10M', 'fup_profile' => 'PPPOE-10M-FUP', 'quota_gb' => 300))
+    ));
+    $normalPackage = pppoePackageForProfile('PPPOE-10M');
+    $fupPackage = pppoePackageForProfile('PPPOE-10M-FUP');
+    assertMikpusing(is_array($normalPackage) && $normalPackage['normal_profile'] === 'PPPOE-10M', 'normal profile resolves to package mapping');
+    assertMikpusing(is_array($fupPackage) && $fupPackage['normal_profile'] === 'PPPOE-10M', 'FUP profile resolves to its normal package for restoration');
+} finally {
+    if ($packageExisted) file_put_contents($packagePath, $packageBackup, LOCK_EX);
+    elseif (is_file($packagePath)) unlink($packagePath);
+}
+
+echo "OK: Mikhmon smoke tests passed (date boundaries, 1000 invoice IDs, queue counters, normal/FUP mapping).\\n";
 ?>
