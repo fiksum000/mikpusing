@@ -87,6 +87,11 @@ $radiusSecretFromPost = ''; // Never persist shared secrets in the web configura
     <div class="card-body">
       <?php if ($message !== '') { ?><div class="bg-<?= $messageType; ?> pd-10 mb-3"><?= htmlspecialchars($message, ENT_QUOTES, 'UTF-8'); ?></div><?php } ?>
       <p class="text-muted">Pilih backend yang dipakai scheduler Billing. IP di bawah disimpan lokal; password database dan shared secret RADIUS tidak disimpan di sini. Perintah router dibuat untuk disalin dan diperiksa, bukan langsung dijalankan oleh halaman web.</p>
+      <p>
+        <a href="./admin.php?id=settings&amp;router=new-7423" class="group-item group-item-md">Tambah / atur koneksi MikroTik API</a>
+        <a href="./admin.php?id=pppoe-packages" class="group-item group-item-md">Mapping paket PPPoE / Hotspot / FUP / Isolir</a>
+      </p>
+      <small class="text-muted">Nama router, IP, username, dan password API dikelola lewat halaman koneksi MikroTik Mikhmon. Jangan menaruh password router atau RADIUS di source code maupun chat.</small>
       <div class="mb-3">
         <span class="badge <?= $currentBackend === 'radius' ? 'bg-success' : 'bg-info'; ?>">Backend saat ini: <?= strtoupper(htmlspecialchars($currentBackend, ENT_QUOTES, 'UTF-8')); ?></span>
         <span class="badge <?= $radiusReady ? 'bg-success' : 'bg-warning'; ?>">FreeRADIUS <?= $radiusReady ? 'terkonfigurasi' : 'belum terpasang/konfigurasi'; ?></span>
