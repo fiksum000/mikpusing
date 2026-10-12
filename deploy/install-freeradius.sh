@@ -7,6 +7,9 @@ if [[ "${ID:-}" != "ubuntu" || "${VERSION_ID:-}" != "22.04" ]]; then
   echo "Skrip ini ditargetkan untuk Ubuntu Server 22.04 LTS." >&2; exit 1
 fi
 
+APP_DIR="${APP_DIR:-/var/www/mikhmon}"
+if [[ ! -f "${APP_DIR}/cron/radius-accounting-snapshot.php" ]]; then echo "Source Mikhmon tidak ditemukan di ${APP_DIR}; clone repo dahulu." >&2; exit 1; fi
+
 RADIUS_NAS_IP="${RADIUS_NAS_IP:-}"
 if [[ -z "${RADIUS_NAS_IP}" ]]; then
   read -r -p "IP sumber MikroTik yang akan mengirim request RADIUS (RADIUS_NAS_IP): " RADIUS_NAS_IP
@@ -154,6 +157,14 @@ IMPORTANT:
 - Existing RouterOS local secrets/hotspot users are not automatically migrated into SQL.
 EOF
 chmod 0600 /root/mikpusing-radius-credentials.txt
+
+cat > /etc/cron.d/mikhmon-radius <<EOF
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+*/5 * * * * www-data cd ${APP_DIR} && /usr/bin/php cron/radius-accounting-snapshot.php >> storage/radius-accounting.log 2>&1
+EOF
+chmod 0644 /etc/cron.d/mikhmon-radius
+
 cat <<EOF
 FreeRADIUS aktif dan konfigurasi database dibuat.
 Kredensial privat: /root/mikpusing-radius-credentials.txt
