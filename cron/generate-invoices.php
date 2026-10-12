@@ -19,7 +19,7 @@ $integrationSettings = mikhmonIntegrationSettings();
 $defaultAmountEnv = getenv('MIKHMON_DEFAULT_MONTHLY_AMOUNT');
 $defaultAmount = max(0, (int)($defaultAmountEnv !== false && $defaultAmountEnv !== '' ? $defaultAmountEnv : ($integrationSettings['default_monthly_amount'] ?? 0)));
 $backendConfig = mikhmonRadiusConfig();
-$backend = strtolower((string)(getenv('MIKHMON_PPP_AUTH_BACKEND') ?: ($backendConfig['ppp_auth_backend'] ?? 'routeros')));
+$backend = strtolower((string)(getenv('MIKHMON_PPP_AUTH_BACKEND') ?: ($backendConfig['ppp_auth_backend'] ?? 'radius')));
 $totalCreated = 0; $totalCustomers = 0; $errors = 0;
 $logPath = __DIR__ . '/../storage/invoice-generation.log';
 function mikhmonInvoiceLog($message) {
