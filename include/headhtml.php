@@ -34,6 +34,7 @@ error_reporting(0);
 		<link rel="stylesheet" type="text/css" href="css/font-awesome/css/font-awesome.min.css" />
 		<!-- Mikhmon UI -->
 		<link rel="stylesheet" href="css/mikhmon-ui.<?= $theme; ?>.min.css">
+		<link rel="stylesheet" href="css/radius-modern.css?v=20261013">
 		<!-- favicon -->
 		<link rel="icon" href="./img/favicon.png" />
 		<!-- jQuery -->
@@ -44,7 +45,7 @@ error_reporting(0);
 
 		
 	</head>
-	<body>
+	<body class="radius-app">
 		<div class="wrapper">
 
 			

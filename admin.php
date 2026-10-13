@@ -48,8 +48,14 @@ if ($id === 'login') {
         http_response_code(500);
         echo '<div class="bg-danger pd-10">Operasi tidak selesai. Periksa log aplikasi dan preflight CT sebelum mencoba lagi.</div>';
     }
-    echo '</div>';
+    echo '</main>';
 }
 ?>
-<?php if ($id !== 'login') { ?><script src="js/mikhmon-ui.<?= htmlspecialchars($theme, ENT_QUOTES, 'UTF-8'); ?>.min.js"></script><?php } ?>
+<?php if ($id !== 'login') { ?><script>
+const navToggle = document.getElementById('navToggle');
+if (navToggle) navToggle.addEventListener('click', function() {
+  const open = document.body.classList.toggle('nav-open');
+  this.setAttribute('aria-expanded', String(open));
+});
+</script><?php } ?>
 </div></body></html>
