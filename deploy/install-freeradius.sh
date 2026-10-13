@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+umask 077
 
 if [[ "${EUID}" -ne 0 ]]; then echo "Jalankan sebagai root di CT Ubuntu 22.04." >&2; exit 1; fi
 if [[ ! -r /etc/os-release ]]; then echo "OS tidak dikenali." >&2; exit 1; fi
@@ -13,9 +14,22 @@ APP_DIR="${APP_DIR:-/var/www/mikhmon}"
   echo "Source Mikhmon tidak ditemukan di ${APP_DIR}; clone repo dahulu." >&2; exit 1;
 }
 
+# MariaDB must be ready before FreeRADIUS opens its SQL pool, including reboot/restart.
+configure_service_order() {
+  install -d -m 0755 /etc/systemd/system/freeradius.service.d
+  cat > /etc/systemd/system/freeradius.service.d/mikpusing-sql.conf <<'UNIT'
+[Unit]
+Requires=mariadb.service
+After=mariadb.service
+UNIT
+  chmod 0644 /etc/systemd/system/freeradius.service.d/mikpusing-sql.conf
+  systemctl daemon-reload
+}
+
 # Avoid accidentally rotating the DB password/shared secret when the command is pasted twice.
 # Deliberate reconfiguration must be explicit and requires re-applying RouterOS settings.
-if [[ -f /etc/mikhmon/radius.php && "${MIKPUSING_RADIUS_RECONFIGURE:-0}" != "1" ]]; then
+if [[ -f /etc/mikhmon/radius.php  ]]; then
+  configure_service_order
   echo "FreeRADIUS sudah memiliki konfigurasi di /etc/mikhmon/radius.php; aman, tidak ada perubahan."
   echo "Untuk memeriksa service: systemctl status freeradius mariadb --no-pager"
   echo "Untuk melihat secret RouterOS yang saat ini dipakai: cat /root/mikpusing-radius-credentials.txt (root only)."
@@ -30,7 +44,7 @@ fi
 python3 - "${RADIUS_NAS_IP}" <<'PY'
 import ipaddress, sys
 try:
-    ipaddress.ip_address(sys.argv[1])
+    ipaddress.IPv4Address(sys.argv[1])
 except ValueError:
     raise SystemExit("RADIUS_NAS_IP harus berupa satu alamat IP router yang valid.")
 PY
@@ -56,7 +70,7 @@ for var in RADIUS_DB_PASSWORD RADIUS_CLIENT_SECRET; do
   val="${!var}"
   [[ "${val}" =~ ^[A-Za-z0-9._-]{24,128}$ ]] || { echo "$var harus 24-128 karakter dari huruf, angka, titik, garis bawah atau minus." >&2; exit 1; }
 done
-export RADIUS_DB_NAME RADIUS_DB_USER RADIUS_DB_PASSWORD RADIUS_CLIENT_SECRET RADIUS_NAS_IP
+export RADIUS_DB_NAME RADIUS_DB_USER RADIUS_DB_PASSWORD RADIUS_CLIENT_SECRET RADIUS_NAS_IP RADIUS_SERVER_IP
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
@@ -71,6 +85,11 @@ for path in "$SCHEMA" "$SQLCONF" "$CLIENTSCONF" "$DEFAULT_SITE"; do
 done
 
 systemctl enable --now mariadb
+# Refuse adopting/overwriting an existing database without a protected runtime config.
+if [[ "$(mysql --protocol=socket -NBe "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${RADIUS_DB_NAME}'")" != "0" ]]; then
+  echo "Database RADIUS sudah berisi tabel. Pulihkan konfigurasi lama; installer tidak menimpa database." >&2
+  exit 1
+fi
 mysql --protocol=socket <<SQL
 CREATE DATABASE IF NOT EXISTS \`${RADIUS_DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS '${RADIUS_DB_USER}'@'localhost' IDENTIFIED BY '${RADIUS_DB_PASSWORD}';
@@ -100,10 +119,20 @@ values = {
 }
 with open(path, encoding='utf-8') as f:
     lines = f.readlines()
+# The distribution's MySQL example enables a TLS block pointing at sample
+# certificate paths. This installer uses MariaDB on localhost, not remote SQL.
+tls_depth = 0
+for i, line in enumerate(lines):
+    if not tls_depth and re.match(r'^\s*tls\s*\{', line):
+        tls_depth = line.count('{') - line.count('}')
+        lines[i] = '# ' + line
+    elif tls_depth:
+        tls_depth += line.split('#', 1)[0].count('{') - line.split('#', 1)[0].count('}')
+        lines[i] = '# ' + line
 seen = set()
 for i, line in enumerate(lines):
-    m = re.match(r'^(\s*)(driver|dialect|server|port|login|password|radius_db|read_clients)\s*=.*$', line)
-    if m and not line.lstrip().startswith('#'):
+    m = re.match(r'^(\s*)#?\s*(driver|dialect|server|port|login|password|radius_db|read_clients)\s*=.*$', line)
+    if m:
         key = m.group(2)
         if key in values and key not in seen:
             lines[i] = f'{m.group(1)}{key} = {values[key]}\n'
@@ -144,7 +173,7 @@ PY
 
 # Protected credentials consumed by Mikhmon's RadiusClient.
 install -d -o root -g www-data -m 0750 /etc/mikhmon
-cat > /etc/mikhmon/radius.php <<EOF
+cat > /etc/mikhmon/radius.php.pending <<EOF
 <?php
 // Protected local config; permissions root:www-data 0640. Do not commit this file.
 return array(
@@ -159,8 +188,8 @@ return array(
   'radius_disconnect_port' => 1700,
 );
 EOF
-chown root:www-data /etc/mikhmon/radius.php
-chmod 0640 /etc/mikhmon/radius.php
+chown root:www-data /etc/mikhmon/radius.php.pending
+chmod 0640 /etc/mikhmon/radius.php.pending
 
 # Set the application backend to Full RADIUS while preserving TriPay/WhatsApp settings.
 SETTINGS_FILE="${APP_DIR}/storage/integration_settings.json"
@@ -232,6 +261,8 @@ with open(path, 'w', encoding='utf-8') as f:
     f.writelines(lines)
 PY
 
+configure_service_order
+
 # Keep the web runtime's local config private; verify config before enabling service.
 freeradius -XC
 systemctl enable --now freeradius
@@ -266,6 +297,7 @@ IMPORTANT:
 - Existing RouterOS local secrets/hotspot users are not automatically migrated into SQL.
 EOF
 chmod 0600 /root/mikpusing-radius-credentials.txt
+mv /etc/mikhmon/radius.php.pending /etc/mikhmon/radius.php
 
 cat > /etc/cron.d/mikhmon-radius <<EOF
 SHELL=/bin/bash

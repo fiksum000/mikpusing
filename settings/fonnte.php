@@ -35,11 +35,18 @@ function fonnteMaskToken($token) {
   return substr($token, 0, 4) . '********' . substr($token, -4);
 }
 
+if (empty($_SESSION['fonnte_csrf'])) $_SESSION['fonnte_csrf'] = bin2hex(random_bytes(32));
+$fonnteCsrf = (string)$_SESSION['fonnte_csrf'];
+$fonntePostValid = $_SERVER['REQUEST_METHOD'] !== 'POST' || hash_equals($fonnteCsrf, (string)($_POST['csrf'] ?? ''));
 $fonnteMessage = '';
 $fonnteMessageType = 'info';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$fonntePostValid) {
+  $fonnteMessage = 'Permintaan ditolak: token keamanan tidak cocok. Muat ulang halaman.';
+  $fonnteMessageType = 'danger';
+}
 $currentFonnteToken = isset($fonnteToken) ? decrypt($fonnteToken) : '';
 
-if (isset($_POST['test_fonnte'])) {
+if ($fonntePostValid && isset($_POST['test_fonnte'])) {
   $candidate = trim($_POST['fonnte_token']);
   $reason = '';
   if (fonnteValidateToken($candidate, $reason)) {
@@ -51,7 +58,7 @@ if (isset($_POST['test_fonnte'])) {
   }
 }
 
-if (isset($_POST['save_fonnte'])) {
+if ($fonntePostValid && isset($_POST['save_fonnte'])) {
   $candidate = trim($_POST['fonnte_token']);
   $reason = '';
   if (!fonnteValidateToken($candidate, $reason)) {
@@ -84,7 +91,7 @@ if (isset($_POST['save_fonnte'])) {
       <div class="card-header"><h3 class="card-title"><i class="fa fa-whatsapp"></i> Pengaturan WhatsApp Fonnte</h3></div>
       <div class="card-body">
         <?php if ($fonnteMessage !== '') { ?><div class="bg-<?= $fonnteMessageType; ?> pd-10 radius-3 mb-3"><?= $fonnteMessage; ?></div><?php } ?>
-        <form autocomplete="off" method="post" action="./admin.php?id=fonnte">
+        <form autocomplete="off" method="post" action="./admin.php?id=fonnte"><input type="hidden" name="csrf" value="<?= htmlspecialchars($fonnteCsrf, ENT_QUOTES, 'UTF-8'); ?>"/>
           <table class="table table-sm">
             <tr><td class="align-middle" style="width:35%;">Provider</td><td><span class="badge bg-success">Fonnte</span><div class="text-muted mt-1">Provider default untuk notifikasi invoice dan pembayaran.</div></td></tr>
             <tr><td class="align-middle">Status token</td><td><?php if ($currentFonnteToken !== '') { ?><span class="text-green"><i class="fa fa-check-circle"></i> Tersimpan: <?= htmlspecialchars(fonnteMaskToken($currentFonnteToken), ENT_QUOTES, 'UTF-8'); ?></span><?php } else { ?><span class="text-red"><i class="fa fa-warning"></i> Belum dikonfigurasi</span><?php } ?></td></tr>

@@ -25,15 +25,21 @@ if (!function_exists('mikhmonRadiusConfig')) {
     if ($loaded !== null) return $loaded;
     $base = mikhmonRadiusBaseConfig();
     $settings = mikhmonIntegrationSettings();
-    $backend = strtolower((string)($settings['ppp_auth_backend'] ?? ($base['ppp_auth_backend'] ?? 'routeros')));
-    $base['ppp_auth_backend'] = in_array($backend, array('routeros', 'radius'), true) ? $backend : 'routeros';
+    // This branch is explicitly Full RADIUS: legacy settings must not silently
+    // reactivate RouterOS API for PPPoE/customer/billing operations.
+    $base['ppp_auth_backend'] = 'radius';
+    $base['disconnect_mode'] = 'radius-dm';
+    // Keep /etc/mikhmon/radius.php authoritative for the NAS IP and shared
+    // secret. The UI can stage a new IP in JSON before register-radius-nas.sh
+    // updates FreeRADIUS clients.conf and the protected runtime config; using
+    // staged settings here could send Disconnect-Message to an unregistered NAS.
     $loaded = $base;
     return $loaded;
   }
 }
 
 /**
- * FreeRADIUS SQL client for the optional central-authentication backend.
+ * FreeRADIUS SQL client for the Full RADIUS backend.
  * Configure MIKHMON_RADIUS_DB_HOST/USER/PASSWORD/NAME through the service
  * environment or /etc/mikhmon/radius.env; never use a default DB password.
  */
@@ -70,6 +76,73 @@ class RadiusClient {
     return $rows;
   }
 
+  /** Return the MikroTik group reply attributes used by the Full RADIUS package editor. */
+  public function getGroupAttributes() {
+    $sql = "SELECT groupname, attribute, value FROM radgroupreply
+            WHERE attribute IN ('Mikrotik-Rate-Limit', 'Mikrotik-Address-List')
+            ORDER BY groupname, attribute";
+    $result = $this->db->query($sql);
+    $groups = array();
+    while ($row = $result->fetch_assoc()) {
+      $group = (string)$row['groupname'];
+      $attribute = (string)$row['attribute'];
+      // If an old database has duplicate group/attribute rows, use the last row
+      // returned by ID ordering in future-safe form rather than returning arrays.
+      $groups[$group][$attribute] = (string)$row['value'];
+    }
+    $result->free();
+    return $groups;
+  }
+
+  /**
+   * Upsert only the managed MikroTik reply attributes in one SQL transaction.
+   * Existing unrelated reply attributes for the same group are preserved.
+   */
+  public function upsertGroupsAttributes(array $groups) {
+    $allowedAttributes = array('Mikrotik-Rate-Limit', 'Mikrotik-Address-List');
+    $prepared = array();
+    foreach ($groups as $groupname => $attributes) {
+      $groupname = trim((string)$groupname);
+      if (!preg_match('/^[A-Za-z0-9_.@-]{1,64}$/', $groupname)) {
+        throw new InvalidArgumentException('Nama group RADIUS tidak valid: ' . $groupname);
+      }
+      if (!is_array($attributes) || !$attributes) {
+        throw new InvalidArgumentException('Atribut group RADIUS tidak boleh kosong: ' . $groupname);
+      }
+      foreach ($attributes as $attribute => $value) {
+        $attribute = (string)$attribute;
+        $value = trim((string)$value);
+        if (!in_array($attribute, $allowedAttributes, true) || $value === '' || strlen($value) > 255
+            || preg_match('/[\x00-\x1F\x7F]/', $value)) {
+          throw new InvalidArgumentException('Atribut RADIUS tidak valid untuk group ' . $groupname);
+        }
+        $prepared[$groupname][$attribute] = $value;
+      }
+    }
+    if (!$prepared) throw new InvalidArgumentException('Tidak ada group RADIUS untuk disimpan.');
+    $this->db->begin_transaction();
+    try {
+      $delete = $this->db->prepare('DELETE FROM radgroupreply WHERE groupname = ? AND attribute = ?');
+      $insert = $this->db->prepare('INSERT INTO radgroupreply (groupname, attribute, op, value) VALUES (?, ?, ?, ?)');
+      $operator = ':=';
+      foreach ($prepared as $groupname => $attributes) {
+        foreach ($attributes as $attribute => $value) {
+          $delete->bind_param('ss', $groupname, $attribute);
+          $delete->execute();
+          $insert->bind_param('ssss', $groupname, $attribute, $operator, $value);
+          $insert->execute();
+        }
+      }
+      $delete->close();
+      $insert->close();
+      $this->db->commit();
+    } catch (Throwable $e) {
+      $this->db->rollback();
+      throw $e;
+    }
+    return count($prepared);
+  }
+
   /** Return group names which have RADIUS reply attributes configured. */
   public function listGroups() {
     $result = $this->db->query("SELECT DISTINCT groupname FROM radgroupreply WHERE groupname <> '' ORDER BY groupname");
@@ -90,7 +163,7 @@ class RadiusClient {
     return $rows;
   }
 
-  private function accountingStatePath() { return __DIR__ . '/../storage/radius_accounting.json'; }
+  private function accountingStatePath() { return getenv('MIKHMON_ACCOUNTING_FILE') ?: __DIR__ . '/../storage/radius_accounting.json'; }
 
   /** Return the sampled monthly usage map: username => bytes. */
   public function getMonthlyUsageMap($period = null) {
@@ -126,16 +199,10 @@ class RadiusClient {
     $monthStart = $month->format('Y-m-d H:i:s');
     $monthEnd = $month->modify('+1 month')->format('Y-m-d H:i:s');
     $sql = "SELECT radacctid, acctuniqueid, username, acctstarttime, acctstoptime,
-                   acctinputoctets, acctoutputoctets, acctinputgigawords, acctoutputgigawords
+                   acctinputoctets, acctoutputoctets
             FROM radacct
             WHERE acctstarttime < ? AND (acctstoptime IS NULL OR acctstoptime >= ?)";
-    $stmt = $this->db->prepare($sql);
-    $stmt->bind_param('ss', $monthEnd, $monthStart);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $rows = array();
-    while ($row = $result->fetch_assoc()) $rows[] = $row;
-    $stmt->close();
+
 
     $path = $this->accountingStatePath();
     $dir = dirname($path);
@@ -143,8 +210,15 @@ class RadiusClient {
     $lock = @fopen($path . '.lock', 'c');
     if (!$lock || !flock($lock, LOCK_EX)) throw new RuntimeException('Tidak bisa mengunci file accounting state.');
     try {
+    $stmt = $this->db->prepare($sql);
+    $stmt->bind_param('ss', $monthEnd, $monthStart);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $rows = array();
+    while ($row = $result->fetch_assoc()) $rows[] = $row;
+    $stmt->close();
       $state = is_file($path) ? json_decode(@file_get_contents($path) ?: '{}', true) : array();
-      if (!is_array($state)) $state = array();
+      if (!is_array($state)) throw new RuntimeException('Accounting JSON rusak; pulihkan backup sebelum sampling.');
       if (!isset($state['sessions']) || !is_array($state['sessions'])) $state['sessions'] = array();
       if (!isset($state['usage']) || !is_array($state['usage'])) $state['usage'] = array();
       if (!isset($state['usage'][$period]) || !is_array($state['usage'][$period])) $state['usage'][$period] = array();
@@ -155,8 +229,7 @@ class RadiusClient {
         if ($username === '') continue;
         $unique = trim((string)($row['acctuniqueid'] ?? ''));
         $sessionKey = $unique !== '' ? $unique : ('radacctid:' . (string)$row['radacctid']);
-        $current = max(0.0, (float)($row['acctinputoctets'] ?? 0) + (float)($row['acctoutputoctets'] ?? 0)
-          + (((float)($row['acctinputgigawords'] ?? 0) + (float)($row['acctoutputgigawords'] ?? 0)) * 4294967296));
+        $current = max(0.0, (float)($row['acctinputoctets'] ?? 0) + (float)($row['acctoutputoctets'] ?? 0));
         $old = $state['sessions'][$sessionKey] ?? null;
         if (is_array($old)) {
           $last = max(0.0, (float)($old['last_counter_bytes'] ?? $current));
@@ -175,10 +248,11 @@ class RadiusClient {
         );
         $sampled++;
       }
-      // Keep current and recent history only.
+      // Keep every session the current SQL window can still return; pruning earlier
+      // would count old stopped sessions again on the next sample.
       foreach ($state['sessions'] as $key => $session) {
         $stop = !empty($session['acctstoptime']) ? strtotime($session['acctstoptime']) : false;
-        if ($stop !== false && $stop < ($now - 14 * 86400)) unset($state['sessions'][$key]);
+        if ($stop !== false && $stop < strtotime($monthStart)) unset($state['sessions'][$key]);
       }
       ksort($state['usage']);
       if (count($state['usage']) > 18) $state['usage'] = array_slice($state['usage'], -18, null, true);
@@ -222,20 +296,39 @@ class RadiusClient {
     return true;
   }
 
-  /** Add/update a RADIUS user's cleartext password and group. */
+  /** Add/update a RADIUS user's password and group atomically. */
   public function upsertUser($username, $password, $profile) {
     $username = trim((string)$username);
+    $profile = trim((string)$profile);
     if ($username === '' || $password === '') throw new InvalidArgumentException('Username/password wajib diisi.');
-    // FreeRADIUS radcheck has no portable unique key across installations.
     $this->db->begin_transaction();
     try {
+      // Validate the requested group before changing credentials. Keep password
+      // and membership in one transaction so an invalid group cannot leave a
+      // subscriber with a password but no intended access policy.
+      if ($profile !== '') {
+        $stmt = $this->db->prepare('SELECT 1 FROM radgroupreply WHERE groupname = ? LIMIT 1');
+        $stmt->bind_param('s', $profile);
+        $stmt->execute();
+        $exists = $stmt->get_result()->fetch_row();
+        $stmt->close();
+        if (!$exists) throw new RuntimeException('Group RADIUS tidak ditemukan di radgroupreply: ' . $profile);
+      }
+
       $stmt = $this->db->prepare("DELETE FROM radcheck WHERE username = ? AND attribute = 'Cleartext-Password'");
       $stmt->bind_param('s', $username); $stmt->execute(); $stmt->close();
       $attribute = 'Cleartext-Password'; $op = ':=';
       $stmt = $this->db->prepare('INSERT INTO radcheck (username, attribute, op, value) VALUES (?, ?, ?, ?)');
       $stmt->bind_param('ssss', $username, $attribute, $op, $password); $stmt->execute(); $stmt->close();
+
+      if ($profile !== '') {
+        $stmt = $this->db->prepare('DELETE FROM radusergroup WHERE username = ?');
+        $stmt->bind_param('s', $username); $stmt->execute(); $stmt->close();
+        $priority = 1;
+        $stmt = $this->db->prepare('INSERT INTO radusergroup (username, groupname, priority) VALUES (?, ?, ?)');
+        $stmt->bind_param('ssi', $username, $profile, $priority); $stmt->execute(); $stmt->close();
+      }
       $this->db->commit();
-      if ($profile !== '') $this->setProfile($username, $profile);
     } catch (Throwable $e) {
       $this->db->rollback();
       throw $e;

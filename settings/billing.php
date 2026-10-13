@@ -9,8 +9,15 @@ include_once('./include/wa_templates.php');
 include_once('./include/fonnte_log.php');
 include_once('./lib/free_radius_client.php');
 
+if (empty($_SESSION['billing_csrf'])) $_SESSION['billing_csrf'] = bin2hex(random_bytes(32));
+$billingCsrf = (string)$_SESSION['billing_csrf'];
+$billingPostValid = $_SERVER['REQUEST_METHOD'] !== 'POST' || hash_equals($billingCsrf, (string)($_POST['csrf'] ?? ''));
 $billingMessage = '';
 $billingType = 'info';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$billingPostValid) {
+  $billingMessage = 'Permintaan ditolak: token keamanan tidak cocok. Muat ulang halaman.';
+  $billingType = 'danger';
+}
 $period = isset($_POST['period']) ? preg_replace('/[^0-9-]/', '', $_POST['period']) : date('Y-m');
 $defaultAmount = isset($_POST['default_amount']) ? (int)$_POST['default_amount'] : 0;
 $secrets = array();
@@ -22,35 +29,31 @@ $customerTypeLabel = $isRadiusMode ? 'pelanggan RADIUS PPPoE/Hotspot' : 'pelangg
 $usernameColumnLabel = $isRadiusMode ? 'Username PPPoE / Hotspot' : 'Username PPPoE';
 $generateButtonLabel = $isRadiusMode ? 'Generate Invoice PPPoE / Hotspot' : 'Generate Invoice PPPoE';
 
-if ($isRadiusMode) {
+// Billing customer source is always FreeRADIUS SQL. Never query /ppp/secret via API.
+$isRadiusMode = true;
+$customerTypeLabel = 'pelanggan RADIUS PPPoE/Hotspot';
+$usernameColumnLabel = 'Username PPPoE / Hotspot';
+$generateButtonLabel = 'Generate Invoice PPPoE / Hotspot';
+try {
   $radius = new RadiusClient();
-  try {
-    foreach ($radius->listUsers() as $radiusUser) {
-      $secrets[] = array('name' => (string)$radiusUser['username'], 'profile' => (string)$radiusUser['profile'], 'comment' => '');
-    }
-  } catch (Throwable $e) {
-    $billingMessage = 'Gagal membaca user RADIUS: ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8');
-    $billingType = 'danger';
-  } finally {
-    if (isset($radius) && $radius instanceof RadiusClient) $radius->disconnect();
+  foreach ($radius->listUsers() as $radiusUser) {
+    $secrets[] = array('name' => (string)$radiusUser['username'], 'profile' => (string)$radiusUser['profile'], 'comment' => '');
   }
-  $billingSession = 'RADIUS';
-  $billingIdentity = 'FreeRADIUS';
-} else {
-  $API = new RouterosAPI();
-  $API->debug = false;
-  if (!empty($billingSession) && @$API->connect($iphost, $userhost, decrypt($passwdhost))) {
-    $response = $API->comm('/ppp/secret/print');
-    if (is_array($response) && !isset($response['!trap'])) $secrets = $response;
-    $API->disconnect();
-  }
+} catch (Throwable $e) {
+  $billingMessage = 'Gagal membaca user RADIUS: ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8');
+  $billingType = 'danger';
+} finally {
+  if (isset($radius) && $radius instanceof RadiusClient) $radius->disconnect();
 }
+$billingSession = 'RADIUS';
+$billingIdentity = 'FreeRADIUS';
+$activeNames = array_fill_keys(array_column($secrets, 'name'), true);
 $allCustomers = customerSyncSecrets($secrets, $billingSession);
 $customers = array();
 foreach (customerReadAll() as $customer) {
-  if ((string)($customer['router_session'] ?? '') === $billingSession) $customers[] = $customer;
+  if ((string)($customer['router_session'] ?? '') === $billingSession && isset($activeNames[(string)($customer['username'] ?? '')])) $customers[] = $customer;
 }
-if (isset($_POST['generate_billing'])) {
+if ($billingPostValid && isset($_POST['generate_billing'])) {
   try {
     $created = billingCreateForCustomers($customers, $period, $defaultAmount);
     $billingMessage = $created . ' invoice baru dibuat untuk periode ' . htmlspecialchars($period, ENT_QUOTES, 'UTF-8') . '.';
@@ -60,43 +63,90 @@ if (isset($_POST['generate_billing'])) {
     $billingType = 'danger';
   }
 }
-if (isset($_POST['create_tripay'])) {
+if ($billingPostValid && isset($_POST['create_tripay'])) {
   $invoiceNo = trim((string)($_POST['invoice_no'] ?? ''));
-  $invoice = billingFindInvoice($invoiceNo);
-  if (!$invoice) { $billingMessage = 'Invoice tidak ditemukan.'; $billingType = 'danger'; }
-  elseif (($invoice['status'] ?? '') === 'paid') { $billingMessage = 'Invoice sudah lunas; transaksi baru tidak dibuat.'; $billingType = 'warning'; }
-  else {
-    $invoice['payment_method'] = preg_replace('/[^A-Z0-9_]/', '', strtoupper((string)($_POST['payment_method'] ?? '')));
-    if ($invoice['payment_method'] === '') {
-      $billingMessage = 'Pilih metode pembayaran terlebih dahulu.'; $billingType = 'danger';
-    } else {
-      $result = tripayCreateTransaction($invoice);
-      if (!empty($result['success'])) {
-        $reference = isset($result['data']['reference']) ? (string)$result['data']['reference'] : '';
-        $checkout = isset($result['data']['checkout_url']) ? (string)$result['data']['checkout_url'] : '';
-        billingUpdateInvoice($invoice['invoice_no'], array(
-          'payment_method' => $invoice['payment_method'], 'tripay_reference' => $reference,
-          'payment_url' => $checkout, 'status' => 'pending', 'payment_notification_sent_at' => ''
-        ));
-        if ($checkout !== '' && !empty($invoice['customer_phone']) && function_exists('fonnteSendMessage')) {
-          $message = waTemplateRender('invoice', array(
-            'nama' => (string)($invoice['customer_name'] ?? $invoice['username'] ?? ''),
-            'invoice' => (string)$invoice['invoice_no'],
-            'periode' => (string)($invoice['period'] ?? ''),
-            'total' => 'Rp' . number_format((int)($invoice['amount'] ?? 0), 0, ',', '.'),
-            'jatuh_tempo' => (string)($invoice['due_date'] ?? ''),
-            'link_bayar' => $checkout
-          ));
-          $sendResult = fonnteSendMessage($invoice['customer_phone'], $message, array('event' => 'invoice', 'invoice' => $invoice['invoice_no']));
-          if (!empty($sendResult['status'])) billingUpdateInvoice($invoice['invoice_no'], array('payment_notification_sent_at' => date('Y-m-d H:i:s')));
+  $paymentLock = billingAcquireInvoiceLock($invoiceNo);
+  if (!$paymentLock) {
+    $billingMessage = 'Operasi pembayaran untuk invoice ini sedang berjalan. Tunggu sebentar lalu muat ulang halaman; transaksi baru tidak dibuat.';
+    $billingType = 'warning';
+  } else {
+    try {
+      $invoice = billingFindInvoice($invoiceNo);
+      if (!$invoice) {
+        $billingMessage = 'Invoice tidak ditemukan.'; $billingType = 'danger';
+      } elseif (strtolower((string)($invoice['status'] ?? '')) === 'paid') {
+        $billingMessage = 'Invoice sudah lunas; transaksi baru tidak dibuat.'; $billingType = 'warning';
+      } elseif (strtolower((string)($invoice['status'] ?? '')) === 'pending'
+          && !empty($invoice['tripay_reference']) && !empty($invoice['payment_url'])) {
+        $billingMessage = 'Invoice ini sudah memiliki transaksi TriPay aktif. Gunakan link checkout yang tercantum pada daftar invoice; transaksi duplikat tidak dibuat.';
+        $billingType = 'warning';
+      } elseif (strtolower((string)($invoice['status'] ?? '')) === 'pending'
+          && empty($invoice['payment_url'])) {
+        $billingMessage = 'Invoice berstatus pending tetapi URL checkout kosong. Periksa dashboard TriPay; transaksi baru tidak dibuat otomatis.';
+        $billingType = 'danger';
+      } else {
+        $method = preg_replace('/[^A-Z0-9_]/', '', strtoupper((string)($_POST['payment_method'] ?? '')));
+        $allowedMethods = array('QRIS','DANA','OVO','SHOPEEPAY','BCAVA','BRIVA','MANDIRIVA','ALFAMART','INDOMARET');
+        if (!in_array($method, $allowedMethods, true)) {
+          $billingMessage = 'Pilih metode pembayaran TriPay yang valid.'; $billingType = 'danger';
+        } else {
+          $invoice['payment_method'] = $method;
+          if (!billingUpdateInvoice($invoiceNo, array('status' => 'pending', 'payment_method' => $method, 'tripay_reference' => '', 'payment_url' => ''))) throw new RuntimeException('Tidak dapat menyimpan status checkout.');
+          $result = tripayCreateTransaction($invoice);
+          if (empty($result['success'])) {
+            $billingMessage = 'Gagal membuat transaksi TriPay: ' . htmlspecialchars((string)($result['message'] ?? 'Unknown error'), ENT_QUOTES, 'UTF-8');
+            $billingType = 'danger';
+          } else {
+            $reference = trim((string)($result['data']['reference'] ?? ''));
+            $checkout = trim((string)($result['data']['checkout_url'] ?? ''));
+            if ($reference === '' || $checkout === '') {
+              $billingMessage = 'TriPay merespons tanpa reference atau checkout URL. Jangan buat transaksi lain sebelum memeriksa dashboard TriPay.';
+              $billingType = 'danger';
+            } elseif (!billingUpdateInvoice($invoiceNo, array(
+              'payment_method' => $method,
+              'tripay_reference' => $reference,
+              'payment_url' => $checkout,
+              'status' => 'pending',
+              'invoice_notification_sent_at' => ''
+            ))) {
+              $billingMessage = 'Transaksi TriPay terbentuk tetapi tidak dapat disimpan di invoice. Jangan membuat transaksi baru; periksa dashboard TriPay.';
+              $billingType = 'danger';
+            } else {
+              $savedInvoice = billingFindInvoice($invoiceNo);
+              if ($savedInvoice && !empty($savedInvoice['customer_phone']) && function_exists('fonnteSendMessage')) {
+                $message = waTemplateRender('invoice', array(
+                  'nama' => (string)($savedInvoice['customer_name'] ?? $savedInvoice['username'] ?? ''),
+                  'invoice' => (string)$savedInvoice['invoice_no'],
+                  'periode' => (string)($savedInvoice['period'] ?? ''),
+                  'total' => 'Rp' . number_format((int)($savedInvoice['amount'] ?? 0), 0, ',', '.'),
+                  'jatuh_tempo' => (string)($savedInvoice['due_date'] ?? ''),
+                  'link_bayar' => $checkout
+                ));
+                $sendResult = fonnteSendMessage($savedInvoice['customer_phone'], $message, array('event' => 'invoice', 'invoice' => $invoiceNo));
+                if (!empty($sendResult['status'])) {
+                  billingUpdateInvoice($invoiceNo, array('invoice_notification_sent_at' => date('Y-m-d H:i:s')));
+                } else {
+                  $billingMessage = 'Transaksi dibuat, tetapi WhatsApp gagal dikirim. Link checkout tersedia di daftar invoice; jangan buat transaksi baru.';
+                  $billingType = 'warning';
+                }
+              }
+              if ($billingType !== 'warning') {
+                $billingMessage = 'Transaksi TriPay berhasil dibuat. Reference: ' . htmlspecialchars($reference, ENT_QUOTES, 'UTF-8') . '. Link checkout ditampilkan pada daftar invoice.';
+                $billingType = 'success';
+              }
+            }
+          }
         }
-        $billingMessage = 'Transaksi TriPay berhasil dibuat.' . ($reference !== '' ? ' Reference: ' . htmlspecialchars($reference, ENT_QUOTES, 'UTF-8') : '');
-        $billingType = 'success';
-      } else { $billingMessage = 'Gagal membuat transaksi TriPay: ' . htmlspecialchars((string)($result['message'] ?? 'Unknown error'), ENT_QUOTES, 'UTF-8'); $billingType = 'danger'; }
+      }
+    } catch (Throwable $e) {
+      $billingMessage = 'Proses TriPay gagal: ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8');
+      $billingType = 'danger';
+    } finally {
+      billingReleaseInvoiceLock($paymentLock);
     }
   }
 }
-if (isset($_POST['update_customer'])) {
+if ($billingPostValid && isset($_POST['update_customer'])) {
   $username = trim((string)($_POST['username'] ?? ''));
   $updated = customerUpdate($username, array(
     'name' => trim((string)($_POST['customer_name'] ?? '')),
@@ -108,21 +158,33 @@ if (isset($_POST['update_customer'])) {
   $billingMessage = $updated ? 'Data pelanggan ' . htmlspecialchars($username, ENT_QUOTES, 'UTF-8') . ' berhasil diperbarui.' : 'Pelanggan tidak ditemukan untuk router/backend ini.';
   $billingType = $updated ? 'success' : 'danger';
   $customers = array();
-  foreach (customerReadAll() as $customer) if ((string)($customer['router_session'] ?? '') === $billingSession) $customers[] = $customer;
+  foreach (customerReadAll() as $customer) if ((string)($customer['router_session'] ?? '') === $billingSession && isset($activeNames[(string)($customer['username'] ?? '')])) $customers[] = $customer;
 }
 $invoices = array_reverse(billingReadInvoices());
+$billingQuery = trim((string)($_GET['q'] ?? ''));
+if ($billingQuery !== '') {
+  $customers = array_values(array_filter($customers, function($row) use ($billingQuery) { return stripos(($row['username'] ?? '') . ' ' . ($row['name'] ?? ''), $billingQuery) !== false; }));
+  $invoices = array_values(array_filter($invoices, function($row) use ($billingQuery) { return stripos(($row['invoice_no'] ?? '') . ' ' . ($row['username'] ?? '') . ' ' . ($row['customer_name'] ?? ''), $billingQuery) !== false; }));
+}
+$billingPageCount = max(1, (int)ceil(max(count($customers), count($invoices)) / 50));
+$billingPage = min($billingPageCount, max(1, (int)($_GET['page'] ?? 1)));
+$customers = array_slice($customers, ($billingPage - 1) * 50, 50);
+$invoices = array_slice($invoices, ($billingPage - 1) * 50, 50);
 $methods = array('QRIS' => 'QRIS', 'DANA' => 'DANA', 'OVO' => 'OVO', 'SHOPEEPAY' => 'ShopeePay', 'BCAVA' => 'VA BCA', 'BRIVA' => 'VA BRI', 'MANDIRIVA' => 'VA Mandiri', 'ALFAMART' => 'Alfamart', 'INDOMARET' => 'Indomaret');
 ?>
 <div class="row">
   <div class="col-12">
+    <form method="get" action="admin.php"><input type="hidden" name="id" value="billing"/><input name="q" value="<?= htmlspecialchars($billingQuery, ENT_QUOTES, 'UTF-8'); ?>" placeholder="Cari pelanggan / invoice"/><button>Cari</button></form>
+    <p>Halaman <?= $billingPage; ?>/<?= $billingPageCount; ?> · Maksimal 50 pelanggan/invoice per halaman.
+    <?php for ($p = max(1, $billingPage - 2); $p <= min($billingPageCount, $billingPage + 2); $p++) { ?><a class="group-item" href="admin.php?id=billing&amp;page=<?= $p; ?>&amp;q=<?= rawurlencode($billingQuery); ?>"><?= $p; ?></a><?php } ?></p>
     <div class="card"><div class="card-header"><h3 class="card-title"><i class="fa fa-money"></i> Billing Bulanan & TriPay</h3></div><div class="card-body">
       <div class="mb-3"><a href="./admin.php?id=billing-integrations" class="group-item group-item-md"><i class="fa fa-plug"></i> Pengaturan Integrasi MikroTik / RADIUS & Perintah Copy-Paste</a></div>
       <?php if ($billingMessage !== '') { ?><div class="bg-<?= $billingType; ?> pd-10 radius-3 mb-3"><?= $billingMessage; ?></div><?php } ?>
-      <form method="post" class="row mb-4"><div class="col-3"><label>Periode</label><input class="form-control" type="month" name="period" value="<?= htmlspecialchars($period, ENT_QUOTES, 'UTF-8'); ?>" required="1"/></div><div class="col-3"><label>Harga default</label><input class="form-control" type="number" name="default_amount" min="0" value="<?= $defaultAmount; ?>" required="1"/></div><div class="col-4 align-self-end"><input class="group-item group-item-md" type="submit" name="generate_billing" value="<?= htmlspecialchars($generateButtonLabel, ENT_QUOTES, 'UTF-8'); ?>"/></div></form>
+      <form method="post" action="./admin.php?id=billing" class="row mb-4"><input type="hidden" name="csrf" value="<?= htmlspecialchars($billingCsrf, ENT_QUOTES, 'UTF-8'); ?>"/><div class="col-3"><label>Periode</label><input class="form-control" type="month" name="period" value="<?= htmlspecialchars($period, ENT_QUOTES, 'UTF-8'); ?>" required="1"/></div><div class="col-3"><label>Harga default</label><input class="form-control" type="number" name="default_amount" min="0" value="<?= $defaultAmount; ?>" required="1"/></div><div class="col-4 align-self-end"><input class="group-item group-item-md" type="submit" name="generate_billing" value="<?= htmlspecialchars($generateButtonLabel, ENT_QUOTES, 'UTF-8'); ?>"/></div></form>
       <p class="text-muted">Ditemukan <b><?= count($customers); ?></b> <?= htmlspecialchars($customerTypeLabel, ENT_QUOTES, 'UTF-8'); ?> pada router/backend <b><?= htmlspecialchars($billingIdentity, ENT_QUOTES, 'UTF-8'); ?></b>. Data kontak dan harga disimpan per username. Invoice duplikat untuk periode dan username yang sama akan dilewati.</p>
-      <div class="table-responsive mb-4"><table class="table table-sm"><thead><tr><th><?= htmlspecialchars($usernameColumnLabel, ENT_QUOTES, 'UTF-8'); ?></th><th>Nama</th><th>WhatsApp</th><th>Harga</th><th>Jatuh tempo</th><th>Update</th></tr></thead><tbody><?php foreach ($customers as $customer) { ?><tr><form method="post"><td><code><?= htmlspecialchars($customer['username'], ENT_QUOTES, 'UTF-8'); ?></code><input type="hidden" name="username" value="<?= htmlspecialchars($customer['username'], ENT_QUOTES, 'UTF-8'); ?>"/></td><td><input class="form-control" name="customer_name" value="<?= htmlspecialchars($customer['name'], ENT_QUOTES, 'UTF-8'); ?>"/></td><td><input class="form-control" name="customer_phone" value="<?= htmlspecialchars($customer['phone'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="62812..."/></td><td><input class="form-control" type="number" name="customer_amount" value="<?= (int)$customer['amount']; ?>" min="0"/></td><td><input class="form-control" type="number" name="due_day" value="<?= (int)$customer['due_day']; ?>" min="1" max="31"/></td><td><input class="group-item group-item-sm" type="submit" name="update_customer" value="Simpan"/></td></form></tr><?php } ?></tbody></table></div>
-      <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Invoice</th><th>Pelanggan</th><th>Periode</th><th>Total</th><th>Status</th><th>Metode TriPay</th><th>Aksi</th></tr></thead><tbody>
-      <?php if (!$invoices) { ?><tr><td colspan="7" class="text-center text-muted">Belum ada invoice.</td></tr><?php } else { foreach ($invoices as $invoice) { ?><tr><td><?= htmlspecialchars($invoice['invoice_no'], ENT_QUOTES, 'UTF-8'); ?></td><td><?= htmlspecialchars($invoice['customer_name'], ENT_QUOTES, 'UTF-8'); ?><br><small><?= htmlspecialchars($invoice['username'], ENT_QUOTES, 'UTF-8'); ?></small></td><td><?= htmlspecialchars($invoice['period'], ENT_QUOTES, 'UTF-8'); ?></td><td><?= number_format((int)$invoice['amount'], 0, ',', '.'); ?></td><td><?= htmlspecialchars($invoice['status'], ENT_QUOTES, 'UTF-8'); ?></td><td><form method="post"><input type="hidden" name="invoice_no" value="<?= htmlspecialchars($invoice['invoice_no'], ENT_QUOTES, 'UTF-8'); ?>"/><select name="payment_method" class="form-control"><option value="">Pilih metode</option><?php foreach ($methods as $key => $label) { ?><option value="<?= $key; ?>" <?= isset($invoice['payment_method']) && $invoice['payment_method'] === $key ? 'selected' : ''; ?>><?= $label; ?></option><?php } ?></select></td><td><input class="group-item group-item-sm" type="submit" name="create_tripay" value="Bayar TriPay"/></form></td></tr><?php }} ?>
+      <div class="table-responsive mb-4"><table class="table table-sm"><thead><tr><th><?= htmlspecialchars($usernameColumnLabel, ENT_QUOTES, 'UTF-8'); ?></th><th>Nama</th><th>WhatsApp</th><th>Harga</th><th>Jatuh tempo</th><th>Update</th></tr></thead><tbody><?php foreach ($customers as $customer) { $customerFormId = 'customer-form-' . substr(hash('sha256', (string)$customer['username']), 0, 12); ?><tr><td><form id="<?= $customerFormId; ?>" method="post" action="./admin.php?id=billing"></form><input type="hidden" form="<?= $customerFormId; ?>" name="csrf" value="<?= htmlspecialchars($billingCsrf, ENT_QUOTES, 'UTF-8'); ?>"/><input type="hidden" form="<?= $customerFormId; ?>" name="username" value="<?= htmlspecialchars($customer['username'], ENT_QUOTES, 'UTF-8'); ?>"/><code><?= htmlspecialchars($customer['username'], ENT_QUOTES, 'UTF-8'); ?></code></td><td><input form="<?= $customerFormId; ?>" class="form-control" name="customer_name" value="<?= htmlspecialchars($customer['name'], ENT_QUOTES, 'UTF-8'); ?>"/></td><td><input form="<?= $customerFormId; ?>" class="form-control" name="customer_phone" value="<?= htmlspecialchars($customer['phone'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="62812..."/></td><td><input form="<?= $customerFormId; ?>" class="form-control" type="number" name="customer_amount" value="<?= (int)$customer['amount']; ?>" min="0"/></td><td><input form="<?= $customerFormId; ?>" class="form-control" type="number" name="due_day" value="<?= (int)$customer['due_day']; ?>" min="1" max="31"/></td><td><button form="<?= $customerFormId; ?>" class="group-item group-item-sm" type="submit" name="update_customer" value="1">Simpan</button></td></tr><?php } ?></tbody></table></div>
+      <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Invoice</th><th>Pelanggan</th><th>Periode</th><th>Total</th><th>Status</th><th>Link bayar</th><th>Metode TriPay</th><th>Aksi</th></tr></thead><tbody>
+      <?php if (!$invoices) { ?><tr><td colspan="8" class="text-center text-muted">Belum ada invoice.</td></tr><?php } else { foreach ($invoices as $invoice) { ?><tr><td><?= htmlspecialchars($invoice['invoice_no'], ENT_QUOTES, 'UTF-8'); ?></td><td><?= htmlspecialchars($invoice['customer_name'], ENT_QUOTES, 'UTF-8'); ?><br><small><?= htmlspecialchars($invoice['username'], ENT_QUOTES, 'UTF-8'); ?></small></td><td><?= htmlspecialchars($invoice['period'], ENT_QUOTES, 'UTF-8'); ?></td><td><?= number_format((int)$invoice['amount'], 0, ',', '.'); ?></td><td><?= htmlspecialchars($invoice['status'], ENT_QUOTES, 'UTF-8'); ?></td><td><?php if (!empty($invoice['payment_url'])) { ?><a href="<?= htmlspecialchars((string)$invoice['payment_url'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer">Buka checkout</a><?php } else { ?><span class="text-muted">—</span><?php } ?></td><td><form id="tripay-form-<?= substr(hash('sha256', (string)$invoice['invoice_no']), 0, 12); ?>" method="post" action="./admin.php?id=billing"><input type="hidden" name="csrf" value="<?= htmlspecialchars($billingCsrf, ENT_QUOTES, 'UTF-8'); ?>"/><input type="hidden" name="invoice_no" value="<?= htmlspecialchars($invoice['invoice_no'], ENT_QUOTES, 'UTF-8'); ?>"/><select name="payment_method" class="form-control"><option value="">Pilih metode</option><?php foreach ($methods as $key => $label) { ?><option value="<?= $key; ?>" <?= isset($invoice['payment_method']) && $invoice['payment_method'] === $key ? 'selected' : ''; ?>><?= $label; ?></option><?php } ?></select></form></td><td><button class="group-item group-item-sm" type="submit" form="tripay-form-<?= substr(hash('sha256', (string)$invoice['invoice_no']), 0, 12); ?>" name="create_tripay" value="1">Bayar TriPay</button></td></tr><?php }} ?>
       </tbody></table></div>
     </div></div>
   </div>

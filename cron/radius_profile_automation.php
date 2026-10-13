@@ -5,15 +5,33 @@
  * pass --apply to change radusergroup and reauthenticate active RouterOS sessions.
  */
 if (PHP_SAPI !== 'cli') { http_response_code(403); exit("CLI only\n"); }
+$lockPath = __DIR__ . '/../storage/pppoe-profile-automation.lock';
+$lockDir = dirname($lockPath);
+if (!is_dir($lockDir) && !@mkdir($lockDir, 0750, true) && !is_dir($lockDir)) {
+    fwrite(STDERR, date('c') . " Cannot create automation lock directory.\n");
+    exit(1);
+}
+$lockHandle = @fopen($lockPath, 'c');
+if (!$lockHandle || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
+    if (is_resource($lockHandle)) fclose($lockHandle);
+    echo date('c') . " RADIUS automation skipped: another run is still active.\n";
+    exit(0);
+}
+register_shutdown_function(function() use ($lockHandle) {
+    if (is_resource($lockHandle)) {
+        flock($lockHandle, LOCK_UN);
+        fclose($lockHandle);
+    }
+});
+
+
 require_once __DIR__ . '/../include/config.php';
 require_once __DIR__ . '/../lib/free_radius_client.php';
 $radiusConfig = mikhmonRadiusConfig();
-$radiusDisconnectMode = strtolower((string)($radiusConfig['disconnect_mode'] ?? 'routeros-api'));
-if ($radiusDisconnectMode === 'radius-dm') {
-    require_once __DIR__ . '/../lib/radius_disconnect_client.php';
-} else {
-    require_once __DIR__ . '/../lib/routeros_session_control.php';
-}
+// Full RADIUS mode uses RFC 5176 Disconnect-Message only. Do not fall back
+// to RouterOS API even if an old config file still says routeros-api.
+$radiusDisconnectMode = 'radius-dm';
+require_once __DIR__ . '/../lib/radius_disconnect_client.php';
 require_once __DIR__ . '/../include/customers.php';
 require_once __DIR__ . '/../include/billing.php';
 require_once __DIR__ . '/../include/pppoe_packages.php';
@@ -44,22 +62,23 @@ $log = function($message) use ($logPath) {
 };
 $errors = 0; $changed = 0; $skipped = 0; $managed = 0;
 $radius = null;
-$pendingPath = __DIR__ . '/../storage/radius-kick-pending.json';
+$pendingPath = getenv('MIKHMON_RADIUS_PENDING_FILE') ?: __DIR__ . '/../storage/radius-kick-pending.json';
 $pending = array();
 $kickRequested = array();
 if (is_file($pendingPath)) {
     $storedPending = json_decode(@file_get_contents($pendingPath) ?: '{}', true);
-    if (is_array($storedPending)) $pending = $storedPending;
+    if (!is_array($storedPending)) { fwrite(STDERR, "Pending DM JSON rusak; pulihkan backup.\n"); exit(1); }
+    $pending = $storedPending;
 }
-$routerSessionController = null;
+function saveRadiusPending($path, $pending) {
+    $json = json_encode($pending, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    $tmp = $path . '.tmp.' . getmypid();
+    if ($json === false || file_put_contents($tmp, $json, LOCK_EX) === false || !rename($tmp, $path)) throw new RuntimeException('Gagal menyimpan antrean DM.');
+}
 $radiusDisconnectController = null;
 try {
     $radius = new RadiusClient();
-    if ($radiusDisconnectMode === 'radius-dm') {
-        $radiusDisconnectController = new MikhmonRadiusDisconnectClient($radius, $radiusConfig);
-    } else {
-        $routerSessionController = new MikhmonRouterSessionController(isset($data) && is_array($data) ? $data : array());
-    }
+    $radiusDisconnectController = new MikhmonRadiusDisconnectClient($radius, $radiusConfig);
     $users = $radius->listUsers();
     // Persist each RADIUS subscriber's last known normal group before any isolation
     // transition; this is how the system can restore the right package after payment.
@@ -78,6 +97,13 @@ try {
         if ($usernameKey !== '') $customers[(string)($row['router_session'] ?? '') . '|' . $usernameKey] = $row;
     }
     $usageMap = $radius->getMonthlyUsageMap($period);
+    // Index all invoice periods once. Billing/isolation decisions must account for
+    // old unpaid invoices too, not only the invoice for the current month.
+    $invoicesByUsername = array();
+    foreach (billingReadInvoices() as $invoiceRow) {
+        $invoiceUsername = trim((string)($invoiceRow['username'] ?? ''));
+        if ($invoiceUsername !== '') $invoicesByUsername[$invoiceUsername][] = $invoiceRow;
+    }
     foreach ($users as $user) {
         $username = trim((string)($user['username'] ?? ''));
         $profile = trim((string)($user['profile'] ?? ''));
@@ -92,79 +118,75 @@ try {
         $normal = trim((string)($package['normal_profile'] ?? ''));
         $fup = trim((string)($package['fup_profile'] ?? ''));
         $quota = max(0.0, (float)($package['quota_gb'] ?? 0));
-        $invoiceNo = billingInvoiceNo($username, $period, 'RADIUS');
-        $invoice = billingFindInvoice($invoiceNo);
-        if (!is_array($invoice)) {
-            // Continue recognizing existing invoices created before hashed invoice IDs.
-            $legacyInvoiceNo = billingLegacyInvoiceNo($username, $period);
-            if ($legacyInvoiceNo !== '') $invoice = billingFindInvoice($legacyInvoiceNo);
-        }
-        // Missing invoice is not interpreted as unpaid: prevent mass isolation if billing was not generated.
-        if (!is_array($invoice)) {
+        $subscriberInvoices = $invoicesByUsername[$username] ?? array();
+        // Without billing evidence do not undo an existing isolation; normal/free
+        // customers still receive FUP decisions independently of invoice generation.
+        if (!$subscriberInvoices && $profile === $isolir) {
             $skipped++;
-            $log("WARN backend=radius user={$username} invoice_missing; profile unchanged");
+            $log("WARN backend=radius user={$username} invoice_history_missing; profile unchanged");
             continue;
         }
-        $paid = ($invoice['status'] ?? '') === 'paid';
-        $dueTimestamp = !empty($invoice['due_date']) ? strtotime((string)$invoice['due_date'] . ' 00:00:00') : false;
-        $isolateTimestamp = $dueTimestamp === false ? false : strtotime('+5 days', $dueTimestamp);
-        $pastGrace = $isolateTimestamp !== false && time() >= $isolateTimestamp;
-        if ($isolateTimestamp === false) $log("WARN backend=radius user={$username} invoice_due_date_invalid; isolation disabled for safety");
+        $pastGrace = billingCustomerHasPastDueInvoice($subscriberInvoices);
+        if (!$pastGrace) {
+            foreach ($subscriberInvoices as $subscriberInvoice) {
+                if (strtolower((string)($subscriberInvoice['status'] ?? 'unpaid')) === 'paid'
+                    || (int)($subscriberInvoice['amount'] ?? 0) <= 0) continue;
+                $dueDate = trim((string)($subscriberInvoice['due_date'] ?? ''));
+                $dueTimestamp = $dueDate !== '' ? strtotime($dueDate . ' 00:00:00') : false;
+                if ($dueTimestamp === false || date('Y-m-d', $dueTimestamp) !== $dueDate) {
+                    $log("WARN backend=radius user={$username} invoice_due_date_invalid; that invoice will not trigger isolation");
+                }
+            }
+        }
         $usageBytes = array_key_exists($username, $usageMap) ? (float)$usageMap[$username] : null;
         $usageGb = $usageBytes === null ? null : $usageBytes / 1073741824;
         $target = $profile;
-        if ($paid && $normal !== '') $target = $normal;
-        elseif (!$paid && $pastGrace && $isolir !== '') $target = $isolir;
-        elseif (!$paid && $fup !== '' && $quota > 0 && $usageGb !== null && $usageGb >= $quota) $target = $fup;
-        elseif (!$paid && $fup !== '' && $profile === $fup && $normal !== '' && ($quota <= 0 || ($usageGb !== null && $usageGb < $quota))) $target = $normal;
+        if ($pastGrace && $isolir !== '') {
+            $target = $isolir;
+        } elseif ($fup !== '' && $quota > 0 && $usageGb !== null && $usageGb >= $quota) {
+            $target = $fup;
+        } elseif ($normal !== '' && ($profile === $isolir || ($profile === $fup && ($quota <= 0 || ($usageGb !== null && $usageGb < $quota))))) {
+            // Restore normal service if no invoice remains past grace, even when
+            // this month's invoice exists but has not reached its own due date.
+            $target = $normal;
+        }
         if ($quota > 0 && $usageGb === null) $log("WARN backend=radius user={$username} monthly_usage_unknown; run radius-accounting-snapshot.php every 5 minutes");
         if ($target === '' || $target === $profile) continue;
         $message = ($apply ? 'APPLY' : 'DRY-RUN') . " backend=radius user={$username} {$profile} -> {$target} usage_gb=" . ($usageGb === null ? 'unknown' : number_format($usageGb, 3, '.', ''));
         if (!$apply) { echo $message . PHP_EOL; continue; }
         try {
-            $radius->setProfile($username, $target);
             $pending[$username] = array('target' => $target, 'requested_at' => date('c'));
+            saveRadiusPending($pendingPath, $pending);
+            $radius->setProfile($username, $target);
             $kickRequested[$username] = $message;
             $changed++;
         } catch (Throwable $e) {
             $errors++; $log("ERROR " . $message . " reason=" . preg_replace('/\s+/', ' ', $e->getMessage()));
         }
     }
-    // Batch all profile changes and earlier retries together: only two active-session
-    // list queries per router, rather than two list queries for every subscriber.
+    // Retry durable reconnect intents with a bounded packet/time budget.
     if ($apply && count($pending) > 0) {
         $toKick = array_values(array_unique(array_merge(array_keys($pending), array_keys($kickRequested))));
-        $kickResults = $radiusDisconnectController
-            ? $radiusDisconnectController->disconnectSubscribers($toKick)
-            : $routerSessionController->disconnectSubscribers($toKick);
+        usort($toKick, function($a, $b) use ($pending) { return strcmp($pending[$a]['last_attempt_at'] ?? '', $pending[$b]['last_attempt_at'] ?? ''); });
+        $kickResults = $radiusDisconnectController->disconnectSubscribers($toKick);
         foreach ($toKick as $pendingUser) {
-            $kicked = $kickResults[$pendingUser] ?? array('routers_checked' => 0, 'ppp' => 0, 'hotspot' => 0, 'errors' => 1, 'router_errors' => array('unknown' => 'missing_kick_result'));
+            $kicked = $kickResults[$pendingUser] ?? array('routers_checked' => 0, 'sessions' => 0, 'errors' => 1, 'router_errors' => array('unknown' => 'missing_kick_result'));
+            if (!empty($kicked['deferred'])) continue;
+            if (isset($pending[$pendingUser])) $pending[$pendingUser]['last_attempt_at'] = date('c');
             if ($kicked['routers_checked'] > 0 && $kicked['errors'] === 0 && count($kicked['router_errors']) === 0) {
                 unset($pending[$pendingUser]);
                 $label = isset($kickRequested[$pendingUser]) ? 'APPLIED' : 'RECOVERED';
-                if ($radiusDisconnectController) {
-                    $log("{$label} backend=radius-dm user={$pendingUser} sessions_disconnected={$kicked['sessions']} no_active_sessions=" . (!empty($kicked['no_active_sessions']) ? 'yes' : 'no'));
-                } else {
-                    $log("{$label} backend=radius-api user={$pendingUser} sessions_kicked_ppp={$kicked['ppp']} sessions_kicked_hotspot={$kicked['hotspot']} routers_checked={$kicked['routers_checked']}");
-                }
+                $log("{$label} backend=radius-dm user={$pendingUser} sessions_disconnected={$kicked['sessions']} no_active_sessions=" . (!empty($kicked['no_active_sessions']) ? 'yes' : 'no'));
             } else {
                 if (!isset($pending[$pendingUser])) $pending[$pendingUser] = array('target' => '', 'requested_at' => date('c'));
-                if ($radiusDisconnectController) {
-                    $details = implode('; ', array_values($kicked['router_errors']));
-                    $log("WARN backend=radius-dm user={$pendingUser} session_disconnect_pending errors={$kicked['errors']} details=" . preg_replace('/\s+/', ' ', $details) . "; retrying on next five-minute run");
-                } else {
-                    $log("WARN backend=radius-api user={$pendingUser} session_kick_pending routers_checked={$kicked['routers_checked']} errors={$kicked['errors']} offline_routers=" . count($kicked['router_errors']) . "; retrying on next five-minute run");
-                }
+                $details = implode('; ', array_values($kicked['router_errors']));
+                $log("WARN backend=radius-dm user={$pendingUser} session_disconnect_pending errors={$kicked['errors']} details=" . preg_replace('/\s+/', ' ', $details) . "; retrying on next five-minute run");
             }
         }
-        $pendingJson = json_encode($pending, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-        if ($pendingJson === false || @file_put_contents($pendingPath, $pendingJson, LOCK_EX) === false) {
-            $errors++;
-            $log("ERROR unable_to_save_session_kick_pending_queue");
-        }
+        try { saveRadiusPending($pendingPath, $pending); }
+        catch (Throwable $e) { $errors++; $log('ERROR unable_to_save_session_kick_pending_queue'); }
     }
     $radius->disconnect();
-    if ($routerSessionController instanceof MikhmonRouterSessionController) $routerSessionController->closeAll();
 } catch (Throwable $e) {
     if ($radius instanceof RadiusClient) $radius->disconnect();
     fwrite(STDERR, date('c') . ' RADIUS automation FAILED: ' . preg_replace('/\s+/', ' ', $e->getMessage()) . PHP_EOL);

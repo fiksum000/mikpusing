@@ -35,8 +35,8 @@ cat >/etc/apache2/sites-available/mikhmon-isolir.conf <<EOF
 EOF
 a2ensite mikhmon-isolir.conf
 apache2ctl configtest
-systemctl enable --now apache2
-systemctl reload apache2
+systemctl enable apache2
+systemctl restart apache2
 echo "Portal isolir aktif di port 8081."
 echo "Pastikan port 8081 hanya dapat dijangkau oleh jaringan pelanggan/router."
-echo "Lalu jalankan php ${APP_DIR}/deploy/configure-isolir-routeros.php --portal-ip IP_CT --apply setelah router Mikhmon terdaftar."
+echo "Buka Add Router, lalu terapkan aturan isolir yang ditampilkan melalui Terminal RouterOS v7."

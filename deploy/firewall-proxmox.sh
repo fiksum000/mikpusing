@@ -1,7 +1,11 @@
-#!/bin/bash
-echo "# Proxmox firewall guidance for Mikhmon:"
-echo "# - Block 22/22.22 dari luar (SSH hanya dari IP admin)"
-echo "# - Block 80/443 hanya dari jaringan pelanggan + admin"
-echo "# - Izinkan 443 https ke router MikroTik API (TCP 8728/8729 jika API aktif)"
-echo "# - Gunakan fail2ban jika tersedia"
-echo "# - Jangan expose storage/ via web (sudah di Apache deny)"
+#!/usr/bin/env bash
+# Guidance only; does not modify host/CT firewall rules.
+cat <<'GUIDE'
+Izinkan UDP 1812/1813 dari IP NAS terdaftar ke CT RADIUS.
+Izinkan UDP 1700 dari CT ke router MikroTik.
+Izinkan TCP 8081 dari jaringan pelanggan ke portal isolir.
+Batasi SSH dan panel admin ke jaringan administrator/VPN.
+Callback TriPay perlu HTTPS publik pada /admin.php?id=tripay-callback.
+RouterOS API 8728/8729 tidak diperlukan.
+Terapkan pembatasan juga pada firewall Proxmox dan router.
+GUIDE

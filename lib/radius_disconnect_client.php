@@ -96,6 +96,7 @@ if (!class_exists('MikhmonRadiusDisconnectClient')) {
      */
     public function disconnectSubscribers($usernames) {
       $result = array();
+      $started = microtime(true); $attempts = 0;
       $nasIp = $this->nasIp;
       $stmt = $this->db->prepare(
         "SELECT username, acctsessionid, nasipaddress, framedipaddress, acctuniqueid
@@ -108,6 +109,10 @@ if (!class_exists('MikhmonRadiusDisconnectClient')) {
       foreach (array_values(array_unique(array_filter(array_map('strval', (array)$usernames), function($v) {
         return trim($v) !== '';
       }))) as $username) {
+        if ($attempts >= 50 || microtime(true) - $started >= 120) {
+          $result[$username] = array('deferred' => true);
+          continue;
+        }
         $sessions = array();
         $stmt->bind_param('ss', $username, $nasIp);
         $stmt->execute();
@@ -121,6 +126,8 @@ if (!class_exists('MikhmonRadiusDisconnectClient')) {
           'no_active_sessions' => count($sessions) === 0
         );
         foreach ($sessions as $session) {
+          if ($attempts >= 50 || microtime(true) - $started >= 120) { $summary['errors']++; $summary['router_errors'][$nasIp] = 'Batch DM penuh; lanjut pada siklus berikutnya.'; break; }
+          $attempts++;
           $attempt = $this->sendDisconnect($session);
           if ($attempt['ok']) {
             $summary['sessions']++;

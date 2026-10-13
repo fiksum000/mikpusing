@@ -85,7 +85,10 @@ if (!function_exists("decrypt")) require_once __DIR__ . '/../lib/decrypt_helper.
     $status = $sent ? 'sent' : 'failed';
     $meta['http_code'] = $http;
     fonnteLogMessage($phone, $message, $status, $detail, $meta);
-    return is_array($body) ? $body : array('status' => false, 'reason' => $detail);
+    $result = is_array($body) ? $body : array();
+    $result['status'] = $sent;
+    if (!$sent) $result['reason'] = $detail;
+    return $result;
   }
 }
 ?>
